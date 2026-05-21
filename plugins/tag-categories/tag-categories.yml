@@ -1,0 +1,22 @@
+name: Tag Categories
+description: Organises your tags into categories and sub-categories, and colours tags by category across Stash. Adds category fields to the tag edit form, with a settings modal to manage the taxonomy.
+version: 1.0.0
+ui:
+  javascript:
+    - tag-categories.js
+  css:
+    - tag-categories.css
+
+settings:
+  taxonomyEditor:
+    displayName: Edit Tag Categories
+    description: Configure the list of tag categories and sub-categories used throughout the plugin.
+    type: STRING
+  reorderTagBadges:
+    displayName: Reorder tag badges by category
+    description: Reorders read-only tag badges across Stash (scene/performer/gallery/image detail pages, scene card popovers, etc.) by your Tag Category hierarchy. Unassigned tags go last. Off by default.
+    type: BOOLEAN
+  clickableCategoryPills:
+    displayName: Make tag categories clickable
+    description: "Make tag category and sub-category pills clickable across Stash to filter by that category/sub-category. (Filters tags by their category/sub-category on the tags page, scenes everywhere else). NOTE: this feature may be slow for larger libraries"
+    type: BOOLEAN

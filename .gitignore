@@ -1,0 +1,13 @@
+# Build output (the GitHub Actions workflow writes here on the runner)
+_site/
+*.zip
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+.vscode/
+.idea/
+
+# Per-machine tooling
+node_modules/

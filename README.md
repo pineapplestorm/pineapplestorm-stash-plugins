@@ -1,24 +1,31 @@
-# Template for creating Stash plugins source index
+# Pineapplestorm's Stash Plugins
 
-This template allows you to create a new repository with a few clicks with preconfigured GitHub action to publish your plugins source index. 
-_This assumes you already know how to create plugins for Stash. If you don't, first read [this](https://docs.stashapp.cc/in-app-manual/plugins/#creating-plugins)._
+Public release source for three plugins for [Stash](https://github.com/stashapp/stash). All AGPL-3.0.
 
-## How to use it?
+## Install
 
-1. Click **Use this template** > **Create a new repository**. 
-1. Choose a repository name and click **Create repository**.
-1. Open **Settings** and head to **Pages**.
-1. Under Build and deployment select the Source as GitHub Actions.
+In Stash, go to **Settings → Plugins → Available Plugins → Add Source** and paste:
 
-Now add your plugins to [plugins](/plugins) directory and they will be automatically published to the source index.
+```
+https://pineapplestorm.github.io/pineapplestorm-stash-plugins/main/index.yml
+```
 
-Source index URL: [`https://<your-username>.github.io/<repository-name>/main/index.yml`](https://<your-username>.github.io/<repository-name>/main/index.yml)
+Then find any of the plugins below in the list and click Install. Stash will notify you when a new version ships.
 
-## Share your plugins
+## Plugins in this source
 
-- [Create a new topic](https://discourse.stashapp.cc/t/-/33) for your plugin on the community forum.
-- [Add your source index to the list](https://discourse.stashapp.cc/t/-/122) on the Stash community forum.
+### [Tag Categories](plugins/tag-categories/)
+
+Gives your tag library structure. Group tags into categories and optional sub-categories, give each category a colour, and that structure shows up everywhere a tag appears in Stash. Ships with a default taxonomy you can reshape as you go.
+
+### [Tag Sets](plugins/tag-sets/)
+
+Reusable bundles of tags applied in one click. A small Tag Sets button sits above every tag picker for inline use, and a manager on every list page lets you bulk-apply sets across selected scenes.
+
+### [Power Tagger](plugins/power-tagger/)
+
+A structured, rules-driven tagging workflow. Define a configuration per scene type, then layer on rules to cascade tags, hide irrelevant ones, cap selections, and audit existing tags. Requires Tag Categories (auto-installed alongside it).
 
 ## License
 
-The default license is set to [AGPL-3.0](/LICENCE). Before publishing any plugins you can change it.
+All plugins in this repository are licensed under [AGPL-3.0](LICENCE). Each plugin folder also carries its own copy of the licence for redistribution.

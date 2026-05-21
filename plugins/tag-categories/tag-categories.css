@@ -1,0 +1,865 @@
+/* Tag Categories plugin — Phase 3 styles
+ *
+ * Sections:
+ *   1. Tag-edit form injected rows (carried over from Phase 1)
+ *   2. Settings modal (overlay, panel, two-column editor, JSON view)
+ */
+
+/* ===========================================================================
+ * 1. Tag-edit form injected rows
+ * ========================================================================= */
+
+.tag-categories-row select:disabled {
+  color: #888;
+  background-color: #1a1a1a;
+  cursor: not-allowed;
+}
+
+.tag-categories-helper {
+  font-size: 11px;
+  color: #888;
+  margin-top: 4px;
+  font-style: italic;
+}
+
+/* Validation error shown beneath the Sub-Category select when a category
+ * has sub-categories defined but none is selected at save time. */
+.tag-categories-error {
+  font-size: 12px;
+  color: #e64545;
+  margin-top: 4px;
+  font-weight: 500;
+}
+
+/* ===========================================================================
+ * Tag DETAIL page rows (Tag Category / Tag Sub-Category, displayed
+ * above Sub-Tags). They use Stash's native .detail-item structure so
+ * they pick up most styling automatically. Only special-case: dim the
+ * "uncategorised" placeholder so it reads as a soft empty state.
+ * ========================================================================= */
+
+.tag-categories-detail-cat.tag-categories-empty-value .detail-item-value,
+.tag-categories-detail-sub.tag-categories-empty-value .detail-item-value {
+  color: #888;
+  font-style: italic;
+}
+
+/* Coloured pill that wraps the value text on the tag detail page rows.
+ * Matches the pre-v1.3.0 single-pill dimensions (2px/10px padding,
+ * line-height 1.4, radius 11px). */
+.tag-categories-detail-pill {
+  display: inline-block;
+  padding: 2px 10px;
+  font-size: 13px;
+  line-height: 1.4;
+  font-weight: 500;
+  border-radius: 11px;
+  color: #ffffff;
+  background: #5a6e85;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* When the detail-page pill is a link (clickable to filter the /tags
+ * listing by category or sub-category), keep it visually identical to
+ * the static span form: no underline, no native link colour. A subtle
+ * hover lift hints it's interactive. */
+a.tag-categories-detail-pill,
+a.tag-categories-detail-pill:hover,
+a.tag-categories-detail-pill:focus {
+  text-decoration: none;
+  cursor: pointer;
+}
+a.tag-categories-detail-pill:hover {
+  filter: brightness(1.1);
+}
+
+.tag-categories-detail-cat.tag-categories-empty-value .tag-categories-detail-pill,
+.tag-categories-detail-sub.tag-categories-empty-value .tag-categories-detail-pill {
+  background: transparent;
+  color: #888;
+  font-style: italic;
+  border: 1px dashed rgba(255, 255, 255, 0.15);
+}
+
+/* ===========================================================================
+ * Pill picker (tag edit form Tag Category / Tag Sub-Category controls).
+ *
+ * Replaces the native <select> with a custom dropdown matching Stash's
+ * TagSelect look. Closed state shows either a placeholder or a single
+ * coloured pill inside an input-like box. Open state shows full-width
+ * rows tinted with each category's colour. The hidden native <select>
+ * underneath remains the canonical state (read by the save hook).
+ *
+ * Styling cribs from .tag-categories-combo (settings-modal combobox) so
+ * the two custom dropdowns in the plugin feel visually identical.
+ * ========================================================================= */
+
+.tag-categories-picker {
+  position: relative;
+  width: 100%;
+}
+
+.tag-categories-picker-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 4px 8px;
+  /* Theme-adaptive background + text: --tc-picker-bg / --tc-picker-text are
+   * populated at runtime from the live .react-select__control on the page,
+   * so our picker tracks whichever Stash theme is active. Border is forced
+   * transparent intentionally - inheriting it would pick up the empty-field
+   * red validation border that glassy paints on unfilled react-selects. */
+  background: var(--tc-picker-bg, rgba(16, 22, 26, 0.3));
+  color: var(--tc-picker-text, inherit);
+  border: 1px solid transparent;
+  border-radius: 4px;
+  font-size: 13px;
+  cursor: pointer;
+  outline: none;
+}
+.tag-categories-picker-control:hover {
+  filter: brightness(1.1);
+}
+.tag-categories-picker-control:focus,
+.tag-categories-picker-control.tag-categories-picker-open {
+  border-color: #5a9bd4;
+  box-shadow: 0 0 0 1px #5a9bd4;
+}
+
+.tag-categories-picker-placeholder {
+  color: #888;
+  flex: 1;
+}
+
+/* The selected pill inside the control re-uses .tag-categories-detail-pill
+ * (same shape, padding, font as on the tag detail page) and overlays an
+ * inline × handle for clearing. */
+.tag-categories-picker-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.tag-categories-picker-pill-x {
+  cursor: pointer;
+  opacity: 0.7;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+}
+.tag-categories-picker-pill-x:hover {
+  opacity: 1;
+}
+
+.tag-categories-picker-chevron {
+  margin-left: auto;
+  padding-left: 8px;
+  color: #888;
+  flex: 0 0 auto;
+  font-size: 12px;
+}
+
+.tag-categories-picker-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  /* Solid dark grey-blue regardless of theme. The control above can be
+   * translucent (per the active theme) but the dropdown panel needs to be
+   * opaque enough that options below the menu's edge aren't bleeding
+   * through. */
+  background: rgb(40, 50, 60);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 4px;
+  max-height: 320px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+.tag-categories-picker-menu[hidden] {
+  display: none;
+}
+
+.tag-categories-picker-option {
+  padding: 6px 12px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+}
+.tag-categories-picker-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ===========================================================================
+ * Swatches — colour picker in the settings modal categories list.
+ *   - .tag-categories-swatch-input : interactive HTML5 colour picker
+ * (The non-interactive .tag-categories-swatch used to sit beside the
+ * tag-edit form select; it was replaced by the pill picker above. CSS
+ * kept around just in case external code still references the class.)
+ * ========================================================================= */
+
+.tag-categories-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tag-categories-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  flex-shrink: 0;
+}
+
+.tag-categories-swatch-input {
+  /* Trim native colour-input chrome; show only the colour rectangle */
+  appearance: none;
+  -webkit-appearance: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  background: transparent;
+  flex-shrink: 0;
+}
+.tag-categories-swatch-input::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+.tag-categories-swatch-input::-webkit-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+.tag-categories-swatch-input::-moz-color-swatch {
+  border: none;
+  border-radius: 3px;
+}
+
+/* Add a bit of gap before the name in list items now that swatch is inline */
+.tag-categories-list-item {
+  gap: 10px;
+}
+
+/* ===========================================================================
+ * Column 3 — tags in selected (category, subcategory). Search input at the
+ * top filters the uncategorised tag picker; tags listed below.
+ * ========================================================================= */
+
+/* v0.4.0: tag picker. Wrapper + a bespoke combobox (TagPickerCombo)
+ * styled to read as a native Stash dark combobox, but with each
+ * option annotated by the tag's current category. */
+.tag-categories-tag-picker {
+  padding: 8px 10px;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.tag-categories-combo {
+  position: relative;
+}
+
+.tag-categories-combo-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  background: #2b2b2b;
+  color: #e8e8e8;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  font-size: 13px;
+  outline: none;
+}
+.tag-categories-combo-input:focus {
+  border-color: #5a9bd4;
+  box-shadow: 0 0 0 1px #5a9bd4;
+}
+.tag-categories-combo-input::placeholder {
+  color: #888;
+}
+
+.tag-categories-combo-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #2b2b2b;
+  border: 1px solid #3d3d3d;
+  border-radius: 4px;
+  max-height: 280px;
+  overflow-y: auto;
+  z-index: 20;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+}
+
+.tag-categories-combo-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 7px 10px;
+  cursor: pointer;
+  font-size: 13px;
+  color: #ddd;
+}
+.tag-categories-combo-option.highlighted {
+  background: #3a4754;
+  color: #fff;
+}
+
+.tag-categories-combo-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tag-categories-combo-cat {
+  flex-shrink: 0;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 9px;
+  white-space: nowrap;
+  max-width: 48%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-categories-combo-uncat {
+  flex-shrink: 0;
+  font-size: 10px;
+  color: #777;
+  font-style: italic;
+}
+
+.tag-categories-combo-create {
+  color: #6ab0f3;
+  font-weight: 600;
+}
+
+.tag-categories-combo-empty {
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #888;
+  font-style: italic;
+}
+
+/* Marker in the col-3 tag list: this tag will be moved out of another
+ * category when the editor is saved. */
+.tag-categories-list-moved {
+  font-size: 10px;
+  color: #d99a4e;
+  font-style: italic;
+  margin-left: 8px;
+  white-space: nowrap;
+}
+
+.tag-categories-tag-list-item .tag-categories-list-name a {
+  color: #e0e0e0;
+  text-decoration: none;
+}
+.tag-categories-tag-list-item .tag-categories-list-name a:hover {
+  color: #4fa0b8;
+  text-decoration: underline;
+}
+
+/* ===========================================================================
+ * Drag-and-drop: handle + drop-position indicators.
+ *
+ * The drag handle is a small grip glyph on the left of each list item.
+ * Only the handle has draggable=true, so clicks elsewhere in the row
+ * (selecting, swatch picker, action buttons) continue to work normally.
+ *
+ * During drag, the row being hovered gets either .drag-over-above or
+ * .drag-over-below depending on which half of the row the cursor is in.
+ * This is rendered as a thin coloured border on the relevant edge — clean
+ * visual cue without affecting layout.
+ * ========================================================================= */
+
+.tag-categories-drag-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  min-width: 16px;
+  height: 18px;
+  cursor: grab;
+  color: #666;
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.tag-categories-drag-handle:hover {
+  color: #aaa;
+}
+
+.tag-categories-drag-handle:active {
+  cursor: grabbing;
+}
+
+/* The list item gets a thin coloured border on the relevant edge when
+ * a drop is hovering on its top or bottom half. Border colour matches
+ * the modal accent (the selected-item blue). */
+.tag-categories-list-item.drag-over-above {
+  box-shadow: inset 0 2px 0 0 #4fa0b8;
+}
+.tag-categories-list-item.drag-over-below {
+  box-shadow: inset 0 -2px 0 0 #4fa0b8;
+}
+
+/* ===========================================================================
+ * Tag card pill/badge — shown above "Parent of X Tags" on each card.
+ * Single-line, compact, will pick up colour styling when category-coloured
+ * mode is added in a later phase.
+ * ========================================================================= */
+
+/* Defensive fix for the tag-card h5 title clipping its glyphs.
+ *
+ * Stash core sets line-height: 1.2 on .card-section-title with no
+ * explicit height, so the h5 sizes itself to exactly 1.2em (e.g. 21px
+ * for 17.5px font). The system font stack (Segoe UI on Windows,
+ * BlinkMacSystemFont on macOS) has a natural glyph bbox of ~1.31em
+ * because its ascender metric is unusually tall, so cap-tops on
+ * letters like b/d/f/h/k/l and descenders on g/p/q/y both fall
+ * outside the line-box and get visually trimmed against the h5's
+ * bounding edges.
+ *
+ * Bumping line-height to 1.4 gives the line-box room above and below
+ * the glyph bbox so nothing trims. h5 height auto-grows to match
+ * the new line-box (~24.5px instead of 21px) — adds ~3.5px per
+ * card, only visible on .tag-card so we don't disturb scene /
+ * gallery / performer card layouts. */
+.tag-card .card-section h5.card-section-title {
+  line-height: 1.4;
+}
+
+/* v1.3.0: outer wrapper for the (now potentially two-pill) card badge.
+ * inline-flex with a small gap keeps the category and sub-category pills
+ * side by side. max-width: 100% + min-width: 0 lets the pills shrink
+ * (and ellipsis-truncate) when the card is narrow. Margin matches the
+ * pre-v1.3.0 single-badge value. */
+.tag-categories-card-badge {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  margin: 4px 0;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* Individual pill inside the badge wrapper. Dimensions match the
+ * pre-v1.3.0 single-badge styling exactly (2px/8px padding, line-height
+ * 1.4, radius 10px) so the pill's height is identical to before the
+ * wrapper split.
+ *
+ * cursor: default so non-clickable pills don't inherit the pointer cursor
+ * from the surrounding tag card's <a>. The .tag-categories-card-badge-link
+ * rule below overrides this to pointer when the pill IS clickable.
+ */
+.tag-categories-card-badge-pill {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 500;
+  border-radius: 10px;
+  background: #2a3f55;
+  color: #cde2f5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  cursor: default;
+}
+
+.tag-categories-card-badge-uncategorised {
+  background: transparent;
+  color: #777;
+  font-style: italic;
+  border: 1px dashed rgba(255, 255, 255, 0.1);
+}
+
+/* v0.6.0: tag cards whose category is marked hidden — fully hidden
+ * on the /tags listing only. !important defends against Stash's own
+ * card layout rules. */
+.tag-categories-hidden-card {
+  display: none !important;
+}
+
+/* v0.5.0: clickable category badge — links to a filtered Scenes list.
+ * Brightens slightly on hover so it reads as interactive. */
+.tag-categories-card-badge-link {
+  cursor: pointer;
+  transition: filter 0.1s ease, box-shadow 0.1s ease;
+}
+.tag-categories-card-badge-link:hover {
+  filter: brightness(1.15);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.18);
+}
+.tag-categories-card-badge-link:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.35);
+}
+
+/* ===========================================================================
+ * 2. Settings modal — overlay + portal
+ * ========================================================================= */
+
+.tag-categories-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  /* Centre the fixed-height editor modal vertically. */
+  align-items: center;
+  justify-content: center;
+  /* 1500 clears all of Stash's own page chrome; the nested confirm /
+   * dialog modals set their own higher z-index inline. (The editor's
+   * tag picker is a bespoke in-modal combobox, not a body-portalled
+   * react-select, so there is no 1600 stacking constraint here.) */
+  z-index: 1500;
+  padding: 24px 0;
+}
+
+.tag-categories-modal {
+  background: #1f1f1f;
+  border: 1px solid #2c2c2c;
+  border-radius: 6px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.tag-categories-modal-header {
+  padding: 12px 16px;
+  border-bottom: 1px solid #2c2c2c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.tag-categories-modal-header h5 {
+  margin: 0;
+  color: #f0f0f0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.tag-categories-modal-body {
+  padding: 16px;
+  /* The modal is a fixed height; the editor's columns scroll
+   * internally, so the body itself must not scroll. */
+  overflow: hidden;
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ---------- Editor toolbar ---------- */
+
+.tag-categories-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.tag-categories-toolbar-spacer {
+  margin-left: auto;
+  color: #d4a800;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ---------- Two-column layout ---------- */
+
+.tag-categories-two-col {
+  display: grid;
+  grid-template-columns: minmax(260px, 1.3fr) minmax(260px, 1.3fr) minmax(240px, 1fr);
+  /* One explicit row pinned to the grid's height (minmax(0,1fr) so it
+   * can shrink). Without this an `auto` row would grow to content
+   * height and the columns would never be bounded — so their lists
+   * would not scroll within the fixed-height modal. */
+  grid-template-rows: minmax(0, 1fr);
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.tag-categories-col {
+  background: #181818;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.tag-categories-col-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid #2c2c2c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1c1c1c;
+}
+
+.tag-categories-col-header h6 {
+  margin: 0;
+  color: #e0e0e0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.tag-categories-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.tag-categories-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  border-radius: 3px;
+  margin: 0 4px;
+  transition: background-color 0.1s;
+}
+
+.tag-categories-list-item:hover {
+  background: #2a2a2a;
+}
+
+.tag-categories-list-item.selected {
+  background: #2a3f55;
+}
+
+.tag-categories-list-item.hidden-cat .tag-categories-list-name {
+  color: #888;
+  font-style: italic;
+}
+
+.tag-categories-list-name {
+  flex: 1;
+  color: #e0e0e0;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tag-categories-hidden-flag {
+  color: #777;
+  font-size: 11px;
+}
+
+.tag-categories-subcount {
+  color: #888;
+  font-size: 11px;
+  margin-left: 2px;
+}
+
+.tag-categories-list-actions {
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.tag-categories-list-actions .btn-xs {
+  padding: 2px 7px;
+  font-size: 11px;
+  line-height: 1.3;
+  border-radius: 3px;
+}
+
+/* ---------- Empty state ---------- */
+
+.tag-categories-empty {
+  padding: 24px 16px;
+  color: #888;
+  font-style: italic;
+  font-size: 13px;
+  text-align: center;
+}
+
+/* ---------- JSON view ---------- */
+
+.tag-categories-json-view {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-height: 0;
+}
+
+.tag-categories-json-view textarea {
+  flex: 1;
+  min-height: 320px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  background: #0d0d0d;
+  color: #e0e0e0;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  padding: 10px;
+  resize: vertical;
+}
+
+.tag-categories-json-error {
+  color: #f88;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  background: #2a1818;
+  border: 1px solid #4a2828;
+  border-radius: 3px;
+  padding: 8px 10px;
+}
+
+.tag-categories-json-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ---------- Footer ---------- */
+
+.tag-categories-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  padding-top: 14px;
+  margin-top: 14px;
+  border-top: 1px solid #2c2c2c;
+}
+
+/* ---------- Editor outer wrapper ---------- */
+
+.tag-categories-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* ---------------------------------------------------------------------------
+ * Picker pill colouring (0.3.0)
+ *
+ * Split responsibility:
+ *
+ *   - The OUTER pill (.react-select__multi-value) gets its background and
+ *     color painted inline by JS with !important. Inline !important is the
+ *     highest-priority declaration in CSS — beats any stylesheet rule
+ *     regardless of specificity, !important, or load order. See
+ *     tryColourPickerPills in tag-categories.js.
+ *
+ *   - The INNER label + remove elements are handled HERE by descendant
+ *     rules gated on the data-tc-coloured marker. Reason: react-select
+ *     frequently re-renders these inner elements (any time `values`
+ *     changes — add, remove, sometimes just clicking the search input).
+ *     The new DOM arrives BEFORE our MutationObserver's next pass, so a
+ *     JS-driven inline style on the inner elements would flash to theme
+ *     default for a frame. A CSS rule applies the instant the inner DOM
+ *     mounts — no race.
+ *
+ * Specificity arithmetic (vs Glassy):
+ *
+ *   Glassy:    .react-select__multi-value__label              (0,1,0)
+ *   Ours:      .react-select__multi-value[data-tc-coloured]
+ *                  :not([data-tc-coloured="none"])
+ *                  .react-select__multi-value__label          (0,4,0)
+ *
+ *   With !important on both, higher specificity wins → we win.
+ *
+ * Transparent backgrounds let the outer pill's JS-painted colour show
+ * through. `color: inherit` picks up the JS-set foreground colour on the
+ * outer pill (which is auto-luminance-picked black or white).
+ * ------------------------------------------------------------------------ */
+
+.react-select__multi-value[data-tc-coloured]:not([data-tc-coloured="none"])
+  .react-select__multi-value__label {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+.react-select__multi-value[data-tc-coloured]:not([data-tc-coloured="none"])
+  .react-select__multi-value__remove {
+  background-color: transparent !important;
+  color: inherit !important;
+}
+
+/* Subtle hover affordance on the × button. A dark-on-light pill gets a
+ * darker hover; light-on-dark gets a lighter one. We use rgba over black
+ * because it works on both light and dark category colours. */
+.react-select__multi-value[data-tc-coloured]:not([data-tc-coloured="none"])
+  .react-select__multi-value__remove:hover {
+  background-color: rgba(0, 0, 0, 0.2) !important;
+  color: inherit !important;
+}
+
+/* Force every descendant of a coloured pill to inherit our text colour.
+ * Some themes (Glassy) wrap the label text in an inner <div><span> tree
+ * with its own `color: white !important` on the inner element. That inner
+ * div doesn't inherit from the label because it has its own non-inherit
+ * value. Catching descendants universally is the only way to defeat this
+ * pattern without enumerating every theme's wrapper structure.
+ *
+ * The selector specificity is (0,3,1): three classes/attrs plus the
+ * universal `*` (which adds 0 to specificity). With !important and our
+ * marker-gated parent selector, this wins against any theme rule that
+ * targets descendants by class.
+ *
+ * Scope is limited to coloured pills via the marker attribute, so this
+ * has zero effect on non-tag pickers or pills we deliberately left alone. */
+.react-select__multi-value[data-tc-coloured]:not([data-tc-coloured="none"]) * {
+  color: inherit !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * Tag badge colouring (0.3.0)
+ *
+ * Parallel ruleset to the picker pill colouring above, targeting Stash's
+ * read-only tag badges (scene detail "Tags" list, scene card hover popovers,
+ * gallery/image/performer detail panels). DOM shape:
+ *
+ *   <span class="tag-item tag-link badge badge-secondary" data-tc-coloured="<id>">
+ *     <a href="..."><div>Tag Name</div></a>
+ *   </span>
+ *
+ * The outer <span> is JS-painted inline with !important (see
+ * tryColourTagBadges in tag-categories.js). Descendants are handled here
+ * via `color: inherit !important` so Glassy's text wrapping (which puts a
+ * coloured <span> inside the link's <div>) inherits our foreground colour.
+ *
+ * Specificity arithmetic:
+ *   Plain selector:       .tag-item                    (0,1,0)
+ *   Glassy typically:     .tag-item.tag-link           (0,2,0)
+ *   Ours descendant:      .tag-item[data-tc-coloured]
+ *                            :not([data-tc-coloured="none"]) *  (0,3,1)
+ *
+ * Higher specificity + !important on both sides → we win.
+ *
+ * Background-color on the badge itself is JS-painted (highest priority);
+ * the descendant <a>/<div> stay default — only `color` cascades through.
+ * ------------------------------------------------------------------------ */
+
+span.tag-item[data-tc-coloured]:not([data-tc-coloured="none"]) * {
+  color: inherit !important;
+  background-color: transparent !important;
+}

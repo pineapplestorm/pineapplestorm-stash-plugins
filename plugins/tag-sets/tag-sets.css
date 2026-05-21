@@ -1,0 +1,251 @@
+/* ===========================================================================
+ * Tag Sets — per-row injector button + popover
+ *
+ * The injector button group (.tag-sets-injector) sits absolutely positioned
+ * in the same parent as tagCopyPaste's button group, offset to its left so
+ * the two groups read as: [Tag Sets] [Copy] [Paste].
+ *
+ * tagCopyPaste's CSS uses position: absolute; top: 0; right: 0 inside
+ * .modal-content div.tagCopyPaste div.btn-group — but that selector is
+ * scoped to modals only. Outside modals (e.g. Tagger view) its buttons sit
+ * inline. We mirror that scoping so we sit nicely beside it in both cases.
+ * =========================================================================== */
+
+/* Injector wrapper marker -- used for the in-modal suppression sentinel
+ * and as a React element root. Generates NO box of its own so children
+ * (our btn-group, and the original TagSelect possibly wrapped by
+ * tagCopyPaste) flow as direct children of the surrounding form
+ * element. Three reasons:
+ *
+ *  1) Our absolute btn-group anchors to the nearest positioned
+ *     ancestor in the DOM tree (.multi-set in the bulk-edit dialog,
+ *     .modal-content elsewhere) -- the same ancestor tagCopyPaste's
+ *     btn-group anchors to. So both buttons share a positioning
+ *     context and 110px offsets line up correctly.
+ *  2) No wrapper line box means no "big gap" between the picker and
+ *     the row above it.
+ *  3) The sentinel element still exists in the DOM (display:contents
+ *     doesn't remove it, just its box), so the suppression closest()
+ *     check still works.
+ *
+ * History: earlier versions used position:relative + inline-block on
+ * the wrapper as an offset parent. With width:0 from the collapsed
+ * inline-block, that pushed the absolute btn-group to wrapper.left - 110
+ * (off-screen left whenever the wrapper landed near the left edge of
+ * its container, which happened in .multi-set with both plugins). */
+div.tag-sets-injector {
+  display: contents;
+}
+
+/* v1.2.2: also flatten tagCopyPaste's wrapper with display: contents.
+ * In some Stash contexts (the scene-edit "Edit" tab on a single scene
+ * detail page is the confirmed repro) the patch chain produces our
+ * wrapper and tagCopyPaste's wrapper as SIBLINGS under the form
+ * column rather than nested. With our wrapper at display:contents but
+ * tagCopyPaste's at default block, the layout becomes:
+ *
+ *   .col-xl-12 (block parent)
+ *     .btn-group (Tag Sets, inline-flex, in-flow)
+ *     .tagCopyPaste (block)
+ *       .btn-group (Copy/Paste, inline-flex)
+ *       TagSelect (block picker)
+ *
+ * CSS wraps the inline-level Tag Sets btn-group in an anonymous block
+ * box so it can stack with the block-level tagCopyPaste sibling -- so
+ * Tag Sets ends up on a line ABOVE Copy/Paste instead of beside it.
+ * Flattening tagCopyPaste with display:contents collapses the gap:
+ * both btn-groups become direct flex siblings of the column, and
+ * the picker drops to the next line as a block.
+ *
+ * Safe: tagCopyPaste's CSS doesn't set display on their wrapper and
+ * doesn't rely on it having a box (their absolute positioning targets
+ * the inner btn-group, which still resolves to the same positioned
+ * ancestor regardless). Confirmed by inspection of their plugin's
+ * source. Their JS attaches event listeners by walking up two
+ * parentElement hops from the Copy button -- display:contents
+ * doesn't change parent relationships so those walks still work. */
+div.tagCopyPaste {
+  display: contents;
+}
+
+/* Ensure .multi-set is a positioning context. Idempotent with the
+ * identical rule in tagCopyPaste.css: declaring it here means our
+ * positioning still works when tagCopyPaste isn't installed. */
+div.multi-set {
+  position: relative;
+}
+
+/* Inside any modal: float our btn-group to the top-right of the
+ * nearest positioned ancestor. Default is right:0 (far right) so we
+ * occupy the same slot tagCopyPaste does when only tag-sets is
+ * installed -- the user gets a single button cleanly anchored to the
+ * right edge rather than floating in dead space.
+ *
+ * IMPORTANT: direct-child selector (`>`). When tag-sets is the outer
+ * patch (registered after tagCopyPaste -- the normal case, since
+ * setTimeout(0) defers past tagCopyPaste's await microtask), the
+ * .tagCopyPaste wrapper lives INSIDE .tag-sets-injector, so a
+ * descendant selector would also match the Copy/Paste btn-group and
+ * push it to the same right value as ours -- visible overlap. The `>`
+ * restricts the rule to OUR btn-group only. */
+div.modal-content div.tag-sets-injector > div.btn-group {
+  position: absolute;
+  top: 0;
+  right: 0;
+}
+
+/* When tagCopyPaste is also installed and rendering inside this same
+ * modal, shift our button left so we sit alongside (to the left of)
+ * their Copy/Paste at right:0. Detected via :has() scoped to
+ * .modal-content so this fires only in shared-modal contexts, not
+ * globally on the page. Requires :has() (Chromium 105+ / Firefox 121+
+ * / Safari 15.4+ -- all shipped 2022-2023).
+ *
+ * Value calibration (measured against live DOM, May 2026):
+ *   - tagCopyPaste's Copy+Paste btn-group is ~85.6px wide.
+ *   - The base inline rule below adds margin-right: 4px on our
+ *     btn-group; absolute positioning still respects margins, so the
+ *     effective right-edge offset is (CSS right + 4).
+ *   - With right: 88 we land 92px from .multi-set right, leaving a
+ *     6.4px visible gap before Copy/Paste's left edge. Tight enough
+ *     to read as "next to", loose enough to survive ~6px width
+ *     variation across fonts/zoom without overlapping. */
+div.modal-content:has(div.tagCopyPaste) div.tag-sets-injector > div.btn-group {
+  right: 88px;
+}
+
+/* Inline contexts (Tagger view scene rows, performer/tag/group/etc edit
+ * forms): just flow with normal layout, with a small right margin so we
+ * don't crowd whatever sits next to us. */
+div.tag-sets-injector > div.btn-group {
+  margin-right: 4px;
+}
+
+/* The injector button itself — match tagCopyPaste's button styling so they
+ * read as a group. */
+button.tag-sets-injector-button {
+  white-space: nowrap;
+}
+
+/* ---- Popover ---- */
+
+div.tag-sets-injector-popover {
+  background-color: #2d2d2d;
+  color: #eee;
+  border: 1px solid #444;
+  border-radius: 6px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6);
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 400px;
+  overflow-y: auto;
+  font-size: 13px;
+}
+
+div.tag-sets-injector-popover-header {
+  padding: 8px 12px;
+  border-bottom: 1px solid #444;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #aaa;
+}
+
+ul.tag-sets-injector-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+}
+
+ul.tag-sets-injector-list li {
+  margin: 0;
+  padding: 0;
+}
+
+/* Multi-column grid mode — engaged via .tag-sets-injector-popover-grid
+ * when there are more than ~8 tag sets. The popover widens to fit up to
+ * 4 columns (~840px), each column ~200px wide. Beyond 4 columns the grid
+ * wraps to additional rows and the popover's max-height + overflow-y
+ * scroll behaviour kicks in (same as single-column today). The popover
+ * is right-anchored at the button, so growth happens leftward.
+ *
+ * 4 columns × 200px column + 3 × 6px gaps + popover side padding ≈ 840px.
+ * Capped against viewport via max-width so it can't exceed the screen.
+ */
+div.tag-sets-injector-popover-grid {
+  /* The popover has no intrinsic width — without an explicit width it
+   * shrinks to fit its narrowest content, which collapses the grid back
+   * to a single column. Set width so it actually expands; max-width caps
+   * growth at ~4 columns or viewport. min-width keeps it from being
+   * smaller than the single-column popover.
+   *
+   * width:max-content lets it stop earlier when there aren't enough
+   * items to fill 4 columns, instead of always sitting at 840px. */
+  width: max-content;
+  min-width: 420px;
+  max-width: min(840px, calc(100vw - 32px));
+}
+
+div.tag-sets-injector-popover-grid ul.tag-sets-injector-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 2px 4px;
+  padding: 6px;
+}
+
+div.tag-sets-injector-popover-grid ul.tag-sets-injector-list li {
+  min-width: 0;
+}
+
+div.tag-sets-injector-popover-grid button.tag-sets-injector-item {
+  padding: 6px 10px;
+  border-radius: 4px;
+}
+
+button.tag-sets-injector-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  border: none;
+  color: #eee;
+  text-align: left;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+button.tag-sets-injector-item:hover,
+button.tag-sets-injector-item:focus {
+  background-color: #3a3a3a;
+  outline: none;
+}
+
+span.tag-sets-injector-item-name {
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+span.tag-sets-injector-item-count {
+  flex: 0 0 auto;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background-color: rgba(255, 255, 255, 0.07);
+}
+
+div.tag-sets-injector-empty {
+  padding: 12px;
+  color: #aaa;
+  font-style: italic;
+  font-size: 12px;
+  line-height: 1.4;
+}

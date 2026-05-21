@@ -1,0 +1,8 @@
+name: Tag Sets
+description: Create reusable bundles of tags and apply them in bulk to scenes, or inject them into any tag picker via a per-row button. Bundles only reference tags - they do not create new tags.
+version: 1.0.0
+ui:
+  javascript:
+    - tag-sets.js
+  css:
+    - tag-sets.css
