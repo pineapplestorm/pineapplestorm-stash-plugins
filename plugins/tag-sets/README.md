@@ -2,6 +2,8 @@
 
 A [Stash](https://github.com/stashapp/stash) plugin for saving named bundles of tags and applying them all in one click. If you find yourself constantly retyping the same handful of tags, this is for you.
 
+![The Tag Sets popover open above a tag picker, listing your saved sets with their tag counts](../../docs/screenshots/tag-sets/01-injector-popover.png)
+
 ## What it does
 
 The plugin has two halves: a manager for naming, editing, ordering, and bulk applying your sets, and an injector that drops them into any tag picker across Stash.
@@ -15,6 +17,8 @@ Every list page in Stash (Scenes, Tags, Studios, Performers, Galleries, Images, 
 - On the Scenes page, select some scenes first, then bulk-apply one or more of your sets to them. This uses ADD mode, so it only ever adds tags. Anything already on a scene stays put.
 
 If a tag in a set gets deleted from Stash later, the manager quietly drops it the next time you open the modal. Nothing to clean up by hand.
+
+![The Tag Sets manager modal showing all your saved sets and the tags inside each one](../../docs/screenshots/tag-sets/02-manager.png)
 
 ### The injector
 

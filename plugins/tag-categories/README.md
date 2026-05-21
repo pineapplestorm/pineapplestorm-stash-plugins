@@ -6,6 +6,8 @@ Stash's built-in way to group tags is to make one tag the parent of another. Tha
 
 A default taxonomy ships with the plugin, so you can start using it right away and reshape it as you go. If your tag list has grown to the point where it is difficult to make sense of, this is for you.
 
+![Stash's tags page with every tag card showing its category-coloured pill](../../docs/screenshots/tag-categories/01-tags-page.png)
+
 ## What it does
 
 ### Categorise your tags
@@ -13,6 +15,8 @@ A default taxonomy ships with the plugin, so you can start using it right away a
 Each tag can belong to one **Category** and one optional **Sub-Category**. Pick them at the moment you create or edit a tag: a new pair of category fields slots into Stash's tag form, so you don't have to break flow to assign one.
 
 For bulk work, open the full tag categories editor from the **Tag Categories** button on the toolbar of any list page, or from **Settings → Plugins → Edit Tag Categories**. Rename, reorder, recolour, hide, or delete categories from one place, and every tag follows.
+
+![The Tag Categories editor: categories on the left, sub-categories in the middle, tags with photos on the right](../../docs/screenshots/tag-categories/02-editor.png)
 
 ### Colour-code your tags by category
 
@@ -26,9 +30,13 @@ Not every tag in your library is one you actively want to see. Mark a category a
 
 By default Stash shows tag badges in fixed alphabetical order. Turn on **Reorder tag badges by category** in Settings → Plugins to group them by a category hierarchy of your choosing instead, so every scene card and detail panel is much easier to read at a glance. Heavily tagged scenes become legible again.
 
+![A scene's tag badges clustered by category colour after enabling Reorder tag badges by category](../../docs/screenshots/tag-categories/03-coloured-badges.png)
+
 ### Filter by category from anywhere
 
 Every tag card and tag detail page shows its category as a small badge. Turn on **Make tag categories clickable** in Settings → Plugins, and those badges become clickable filters: click the category pill to jump straight to a list filtered to every tag in that category (or to a single sub-category, when the badge has one).
+
+![Clicking the Mammals sub-category pill on a tag's detail page filters the tags page to every mammal tag](../../docs/screenshots/tag-categories/04-filter-action.png)
 
 Stash's filter modal can do this for only one tag at a time. Filtering by "every tag in this category" otherwise means manually rebuilding the same filter list every time you want it. With this setting on, the badge already knows.
 
@@ -36,7 +44,7 @@ Note: This feature is off by default because the plugin has to resolve every tag
 
 ### Pairs with Power Tagger
 
-[Power Tagger](https://github.com/pineapplestorm/power-tagger) is a filtered tagging workflow built on top of the taxonomy you set up here. It uses your categories to group Stash's tag picker into scene-specific sections, then layers on a custom user-built rules engine to cascade tags, hide irrelevant ones, and cap how many of one kind can apply per scene.
+[Power Tagger](https://github.com/pineapplestorm/pineapplestorm-stash-plugins/tree/main/plugins/power-tagger) is a filtered tagging workflow built on top of the taxonomy you set up here. It uses your categories to group Stash's tag picker into scene-specific sections, then layers on a custom user-built rules engine to cascade tags, hide irrelevant ones, and cap how many of one kind can apply per scene.
 
 ## Installation
 

@@ -6,7 +6,9 @@ Stash's built-in tag picker shows the same flat list every time, no matter what 
 
 Power Tagger replaces this with **configurations** (one per kind of scene), each carrying rules about which tags to show, hide, cascade, and constrain. You only see tags that apply to the scene in front of you, and any existing tags that break the rules get flagged so you can accurately clean them up.
 
-Requires [Tag Categories](https://github.com/pineapplestorm/tag-categories), which supplies the category structure Power Tagger uses to lay out your tags.
+Requires [Tag Categories](https://github.com/pineapplestorm/pineapplestorm-stash-plugins/tree/main/plugins/tag-categories), which supplies the category structure Power Tagger uses to lay out your tags.
+
+![The Power Tagger walkthrough modal mid-tagging: the scene plays alongside category-grouped tag buttons, with a rule-flag warning visible at the top](../../docs/screenshots/power-tagger/01-walkthrough.png)
 
 ## What it does
 
@@ -16,7 +18,9 @@ A typical Stash library can often grow to hundreds of tags. The default tag pick
 
 For example - a solo scene shouldn't show tags for compilations or group scenes, and conversely, a group scene shouldn't show tags that relate to solo scenes. With the right Power Tagger rules setup, you just see the tags that make sense for the scene in front of you, instead of every tag in your whole library.
 
-Within that filtered list, tags are grouped by the categories and sub-categories you set up in [Tag Categories](https://github.com/pineapplestorm/tag-categories), so you can scan a whole category at a glance instead of recalling and manually typing each tag name from memory.
+Within that filtered list, tags are grouped by the categories and sub-categories you set up in [Tag Categories](https://github.com/pineapplestorm/pineapplestorm-stash-plugins/tree/main/plugins/tag-categories), so you can scan a whole category at a glance instead of recalling and manually typing each tag name from memory.
+
+![The configuration picker showing all available scene-type configurations as colourful cards](../../docs/screenshots/power-tagger/02-config-picker.png)
 
 ### Configurations and rules
 
@@ -29,6 +33,8 @@ Each configuration can carry a fuller ruleset:
 - **Constraint rules**: caps that optionally scale with the scene's performers, for example "at least one type of location tag per scene", or - "at most one hair colour tag per female performer in the scene".
 
 Each configuration has its own colour, which shows up on the configuration screen, the walkthrough header, and the rules editor.
+
+![The Power Tagger rules editor with a configuration selected, showing its cascades, conditionals, and per-category settings](../../docs/screenshots/power-tagger/03-rules-editor.png)
 
 ### Keep your tagging accurate
 
