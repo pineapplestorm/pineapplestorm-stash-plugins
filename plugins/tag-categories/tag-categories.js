@@ -4264,6 +4264,112 @@
   }
 
   // -------------------------------------------------------------------------
+  // Picker chip reorder (v1.0.1)
+  //
+  // Sorts the staged tag chips inside Stash's native react-select picker
+  // by taxonomy order, mirroring tryReorderTagBadges' behaviour on the
+  // read-only-badge side. Gated on the same `reorderTagBadges` BOOLEAN
+  // setting as the badges, so one toggle drives all reordered surfaces.
+  //
+  // The tag ID for each chip is read from the colourer's per-chip marker
+  // (PILL_COLOUR_MARKER_ATTR) rather than walking the React fibre, so
+  // this is a cheap attribute read per chip. Both functions run in the
+  // same scheduleInjection Promise.all, so on the rare frame where the
+  // colourer hasn't tagged a chip yet, the reorder skips this pass and
+  // catches up on the next.
+  //
+  // Non-tag pickers (performer, studio, group, etc.) use the same
+  // .react-select__multi-value markup. The colourer marks those chips
+  // "none". When we see ANY chip in a parent with a "none" or absent
+  // marker, we skip the whole parent — that picker isn't a tag picker.
+  //
+  // No content-signature marker like the badge side: react-select can
+  // re-render chips on any value change and may reset our DOM ordering.
+  // Instead we recompute the expected order every pass and only mutate
+  // when the current DOM order differs. After the user adds or removes
+  // a tag, the next observer tick re-sorts; in between, the cheap
+  // "already sorted" comparison no-ops.
+  // -------------------------------------------------------------------------
+
+  async function tryReorderPickerChips() {
+    if (!pillColourerCachedConfig) {
+      await ensurePillColourerConfig();
+      if (!pillColourerCachedConfig) return;
+    }
+    if (!pillColourerCachedConfig.reorderTagBadges) return;
+
+    const chips = document.querySelectorAll(".react-select__multi-value");
+    if (chips.length === 0) return;
+
+    // Group chips by parent — each react-select multi-value container is
+    // a separate picker that may need independent ordering.
+    const byParent = new Map();
+    for (const chip of chips) {
+      const p = chip.parentElement;
+      if (!p) continue;
+      let arr = byParent.get(p);
+      if (!arr) {
+        arr = [];
+        byParent.set(p, arr);
+      }
+      arr.push(chip);
+    }
+
+    for (const [parent, parentChips] of byParent) {
+      if (parentChips.length < 2) continue;
+
+      // Resolve each chip's tag ID from the colourer's per-chip marker.
+      // If ANY chip lacks a tag-shaped marker, this is either a non-tag
+      // picker (performer / studio / etc.) or the colourer hasn't
+      // processed yet — skip the entire parent and catch on a later pass.
+      const chipIds = [];
+      let skip = false;
+      for (const c of parentChips) {
+        const m = c.getAttribute(PILL_COLOUR_MARKER_ATTR);
+        if (!m || m === "none") { skip = true; break; }
+        chipIds.push(m);
+      }
+      if (skip) continue;
+
+      // Compute the expected sorted order. Each entry keeps its original
+      // index so we can detect "already sorted" by checking idx === position.
+      const keyed = parentChips.map((c, i) => {
+        const labelEl = c.querySelector(".react-select__multi-value__label");
+        const name = labelEl ? (labelEl.textContent || "").trim() : "";
+        return { c, idx: i, k: computeSortKeyFromTagId(chipIds[i], name) };
+      });
+      keyed.sort((x, y) => compareBadgeSortKeys(x.k, y.k));
+
+      // Already in expected order — no DOM mutation needed.
+      let needSort = false;
+      for (let i = 0; i < keyed.length; i++) {
+        if (keyed[i].idx !== i) { needSort = true; break; }
+      }
+      if (!needSort) continue;
+
+      try {
+        // Same insertBefore-anchor pattern as the badge reorder to
+        // preserve the chip block's position within its parent (the
+        // react-select input element typically follows the chips).
+        const lastChip = parentChips[parentChips.length - 1];
+        const referenceNode = lastChip.nextSibling;
+        for (const { c } of keyed) {
+          if (referenceNode) {
+            parent.insertBefore(c, referenceNode);
+          } else {
+            parent.appendChild(c);
+          }
+        }
+      } catch (err) {
+        console.warn(
+          "[tag-categories] picker chip reorder failed:",
+          err
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // Tag badge colouring (0.3.0)
   //
   // Stash renders read-only tag references as <span class="tag-item tag-link
@@ -4378,11 +4484,13 @@
 
   const BADGE_REORDER_MARKER_ATTR = "data-tc-reordered";
 
-  // Compute the sort key for a badge given the cached config. Returns
-  // [catIdx, subIdx, lowercaseName, id] or null if no tag ID extractable
-  // (caller should leave such badges in place).
-  function computeBadgeSortKey(badge) {
-    const tagId = getTagIdFromBadgeHref(badge);
+  // Core sort key from (tagId, name): looks up the tag's category and
+  // sub-category indices in the cached taxonomy and returns
+  // [catIdx, subIdx, lowercaseName, id]. Shared by both the read-only
+  // badge reorder and the picker-chip reorder (v1.0.1) so taxonomy order
+  // is identical across all reordered surfaces. Returns null when no
+  // tag ID is provided.
+  function computeSortKeyFromTagId(tagId, name) {
     if (!tagId) return null;
     const cfg = pillColourerCachedConfig;
     const a = (cfg.assignments || {})[String(tagId)];
@@ -4406,14 +4514,23 @@
       }
       // else: cat no longer exists → Infinity (treat as unassigned)
     }
+    return [catIdx, subIdx, (name || "").toLowerCase(), tagId];
+  }
 
+  // Compute the sort key for a read-only badge. Thin wrapper that
+  // extracts the tag ID + display name from the badge element and
+  // delegates to computeSortKeyFromTagId. Returns null if no tag ID
+  // extractable (caller leaves such badges in place).
+  function computeBadgeSortKey(badge) {
+    const tagId = getTagIdFromBadgeHref(badge);
+    if (!tagId) return null;
     // Prefer data-sort-name (Stash sets this to the tag name) over text;
     // fall back to inner anchor's div text. Lowercased for case-insensitive
-    // alphabetical within the same sub.
+    // alphabetical within the same sub (handled inside the helper).
     const rawName =
       badge.getAttribute("data-sort-name") ||
       (badge.textContent || "").trim();
-    return [catIdx, subIdx, rawName.toLowerCase(), tagId];
+    return computeSortKeyFromTagId(tagId, rawName);
   }
 
   // Compare two sort keys; returns -ve / 0 / +ve.
@@ -4429,6 +4546,25 @@
     return String(a[3]).localeCompare(String(b[3]));
   }
 
+  // Stable signature of the tag-id set inside a badge container. Used as
+  // the BADGE_REORDER_MARKER_ATTR value so it acts as a content-aware
+  // dedupe key, not a one-time flag. Order-independent (sorted) so a
+  // container already holding the same set we sorted last time signs to
+  // the same value regardless of current badge order; signs differently
+  // when React reuses the same parent element for a different scene's
+  // badges (e.g. clicking "next" on the scene player, which reconciles
+  // the metadata panel in-place rather than full page navigation).
+  // Pre-1.0.1 the marker was a literal "1", which made the dedupe blind
+  // to badge-content changes and left "next"-navigated scenes alphabetical.
+  function computeBadgeSetSignature(badges) {
+    const ids = [];
+    for (const b of badges) {
+      const id = getTagIdFromBadgeHref(b);
+      if (id) ids.push(String(id));
+    }
+    return ids.sort().join("|");
+  }
+
   async function tryReorderTagBadges() {
     // Lazy-load config; bail if anything goes wrong.
     if (!pillColourerCachedConfig) {
@@ -4438,18 +4574,17 @@
     // Gate: only run when the user has opted in.
     if (!pillColourerCachedConfig.reorderTagBadges) return;
 
-    // Find all badges, group by parent. We deliberately scan ALL badges
-    // (not just unmarked) so we can detect containers that should be
-    // reordered even when colouring has already processed each badge.
-    // The container marker (data-tc-reordered) is the dedupe key.
     const allBadges = document.querySelectorAll("span.tag-item.tag-link");
     if (allBadges.length === 0) return;
 
+    // Group ALL badges by parent. We no longer bail on marker presence
+    // here — instead we compare the parent's stored signature against
+    // the current badge set below, so a parent whose children have
+    // changed gets re-sorted.
     const byParent = new Map();
     for (const b of allBadges) {
       const p = b.parentElement;
       if (!p) continue;
-      if (p.hasAttribute(BADGE_REORDER_MARKER_ATTR)) continue;
       let arr = byParent.get(p);
       if (!arr) {
         arr = [];
@@ -4459,11 +4594,20 @@
     }
 
     for (const [parent, badges] of byParent) {
-      // Single-badge containers: nothing to sort. Mark to skip on future
-      // passes (cheap no-op).
+      // Compute the current badge set signature. If it matches the
+      // marker, this exact set has already been sorted by us (both
+      // pre- and post-sort produce the same sorted-set signature) and
+      // we can skip. Different signature means the children changed.
+      const sig = computeBadgeSetSignature(badges);
+      const prevSig = parent.getAttribute(BADGE_REORDER_MARKER_ATTR);
+      if (prevSig === sig) continue;
+
+      // Single-badge containers: nothing to sort. Stamp with the
+      // current signature so future passes skip cheaply, and re-process
+      // if the badge set ever changes.
       if (badges.length < 2) {
         try {
-          parent.setAttribute(BADGE_REORDER_MARKER_ATTR, "1");
+          parent.setAttribute(BADGE_REORDER_MARKER_ATTR, sig);
         } catch (_) { /* read-only attr or detached node — ignore */ }
         continue;
       }
@@ -4503,7 +4647,7 @@
           }
         }
 
-        parent.setAttribute(BADGE_REORDER_MARKER_ATTR, "1");
+        parent.setAttribute(BADGE_REORDER_MARKER_ATTR, sig);
       } catch (err) {
         // Don't mark — give the next pass a chance to retry. Log once.
         console.warn(
@@ -4556,6 +4700,11 @@
         // every frame but no-ops when the setting is off or when no
         // unprocessed containers exist.
         tryReorderTagBadges(),
+        // v1.0.1: re-sort staged tag chips inside Stash's native picker
+        // by taxonomy order. Gated on the same reorderTagBadges setting
+        // so one toggle drives every reordered surface. No-op when the
+        // DOM order already matches the expected sorted order.
+        tryReorderPickerChips(),
       ]).catch((err) =>
         console.error("[tag-categories] injection error:", err)
       );

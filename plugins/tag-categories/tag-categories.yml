@@ -1,6 +1,6 @@
 name: Tag Categories
 description: Organises your tags into categories and sub-categories, and colours tags by category across Stash. Adds category fields to the tag edit form, with a settings modal to manage the taxonomy.
-version: 1.0.0
+version: 1.0.1
 ui:
   javascript:
     - tag-categories.js
