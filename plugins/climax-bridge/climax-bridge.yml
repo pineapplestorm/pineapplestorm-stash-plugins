@@ -1,0 +1,20 @@
+name: Climax Bridge
+description: Reports scene playback to the Climax desktop app over localhost, and shows a live tracking indicator in the navbar.
+version: 0.5.0
+ui:
+  javascript:
+    - climax-bridge.js
+
+settings:
+  climaxUrl:
+    displayName: Climax app URL
+    description: HTTP endpoint the Climax desktop app listens on. Default http://localhost:9876.
+    type: STRING
+  enabled:
+    displayName: Bridge enabled
+    description: When off, no heartbeats are sent. Defaults to on.
+    type: BOOLEAN
+  showIndicator:
+    displayName: Show tracking indicator in navbar
+    description: Adds a Climax pill to the top navigation bar showing whether a session is being tracked or organising; click it to start a session, stop, or enter organising mode (which pauses Stash play history). Defaults to on.
+    type: BOOLEAN

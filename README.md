@@ -26,6 +26,10 @@ Reusable bundles of tags applied in one click. A small Tag Sets button sits abov
 
 A structured, rules-driven tagging workflow. Define a configuration per scene type, then layer on rules to cascade tags, hide irrelevant ones, cap selections, and audit existing tags that break the rules. Requires Tag Categories, which gets auto-installed alongside it.
 
+### [Climax Bridge](plugins/climax-bridge/)
+
+The Stash companion to Climax, a desktop activity tracker. Reports scene playback to the Climax app and adds a live tracking indicator to the navbar. Requires the Climax desktop app; it does nothing on its own.
+
 ## License
 
 All plugins in this repository are licensed under [AGPL-3.0](LICENCE). Each plugin folder also carries its own copy of the licence for redistribution.
