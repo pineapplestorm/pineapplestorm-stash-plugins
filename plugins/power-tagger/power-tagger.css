@@ -1,0 +1,4143 @@
+/* Power Tagger (Tag Categories) — v0.1.0
+ *
+ * Layout: 85% viewport modal with a CSS grid splitting left (player),
+ * right (scrolling categories), bottom (TagSelect + footer).
+ */
+
+.power-tagger-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Modal/overlay sits BELOW typical menu-portal targets (which use
+   * z-index up to 9999). We want the TagSelect dropdown and Tag Sets'
+   * popover to float above our content. */
+  z-index: 1050;
+  padding: 0;
+}
+
+.power-tagger-modal {
+  background: #1a1a1a;
+  border: 1px solid #2c2c2c;
+  border-radius: 6px;
+  width: 85vw;
+  height: 85vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+}
+
+.power-tagger-header {
+  padding: 10px 16px;
+  border-bottom: 1px solid #2c2c2c;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #1c1c1c;
+  flex-shrink: 0;
+}
+
+.power-tagger-header h5 {
+  margin: 0;
+  color: #f0f0f0;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.power-tagger-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===========================================================================
+ * Grid layout: left=player, right=categories, bottom=TagSelect + footer
+ * ========================================================================= */
+
+.power-tagger-grid {
+  display: grid;
+  /* v0.11.3: balanced player/tag split. Player slightly wider than tag
+   * area so the video gets reasonable real estate; tag grid still has
+   * enough room to land ~5 cards per row at typical viewport widths. */
+  grid-template-columns: 1.2fr 1fr;
+  grid-template-rows: 1fr auto;
+  grid-template-areas:
+    "player categories"
+    "bottom bottom";
+  flex: 1;
+  min-height: 0;
+}
+
+/* Left column \u2014 player on top, performer row below. Picker phase
+ * uses .power-tagger-player directly (no performer row), so both
+ * classes target the same grid area. */
+.power-tagger-left,
+.power-tagger-player {
+  grid-area: player;
+  min-height: 0;
+}
+
+/* Left column wrapper: stack player and performer row vertically.
+ *
+ * v0.11.3 (revised): The performer section reserves enough vertical
+ * space to fit the cards + label + edit row. The player takes the
+ * remaining column height. Previously the player had aspect-ratio
+ * 16/9 + flex-shrink: 0 which made it claim the entire column when
+ * the modal was short \u2014 the performer section was squashed to
+ * ~20px and clipped its cards.
+ *
+ * The player keeps its 16:9 visual shape via the inner video.js
+ * element's max-height + width; we don't enforce aspect-ratio on
+ * the wrapper anymore because that fights with the flex layout.
+ */
+.power-tagger-left {
+  display: flex;
+  flex-direction: column;
+  background: #000;
+  position: relative;
+  /* v0.11.12: min-width: 0 lets this grid cell shrink below its
+     content's intrinsic size. Without it, a wide performer row
+     (6+ cards) pushes the cell wider than 1.2fr — encroaching on
+     the categories column's 1fr space. With min-width: 0, the cell
+     stays at its allocated fr width and the performer row's
+     overflow-x: auto kicks in to scroll instead. */
+  min-width: 0;
+}
+
+/* Player area inside the left column. flex: 1 lets it grow into
+ * remaining space after the performer section claims its share.
+ * min-height: 0 allows it to shrink below content size. */
+.power-tagger-left > .power-tagger-player {
+  grid-area: auto;
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #000;
+  width: 100%;
+  overflow: hidden;
+}
+
+.power-tagger-player {
+  /* Picker-phase fallback (no wrapper): player fills its grid cell. */
+  background: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.power-tagger-player .VideoPlayer,
+.power-tagger-player .video-wrapper,
+.power-tagger-player video,
+.power-tagger-player video-js {
+  width: 100%;
+  height: 100%;
+  max-height: 100%;
+}
+
+.power-tagger-right {
+  grid-area: categories;
+  /* Accordion layout: the right panel is a flex column. Collapsed-cat
+   * headers stack tightly at the top; the one expanded section flex-grows
+   * to fill remaining space and scrolls internally. */
+  display: flex;
+  flex-direction: column;
+  padding: 10px;
+  background: #1a1a1a;
+  border-left: 1px solid #2c2c2c;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.power-tagger-bottom {
+  grid-area: bottom;
+  border-top: 1px solid #2c2c2c;
+  background: #1c1c1c;
+  padding: 10px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex-shrink: 0;
+  /* Allow dropdowns / popovers anchored here (TagSelect's menu, Tag Sets'
+   * popover button) to render outside the modal's clipped area. They use
+   * portals when possible, but some popovers render inline — overflow:
+   * visible here lets them escape the modal's own clip. */
+  overflow: visible;
+}
+
+.power-tagger-tag-select-wrap {
+  position: relative;
+  /* Same as parent: let inline popovers escape upward. */
+  overflow: visible;
+}
+
+/* ===========================================================================
+ * Right panel: walkthrough carousel
+ *
+ * Structure:
+ *   .power-tagger-walkthrough     (flex column, fills .power-tagger-right)
+ *     .power-tagger-strip         (top: clickable category pills, horiz scroll)
+ *     .power-tagger-carousel-viewport  (fills remaining height; overflow:hidden)
+ *       .power-tagger-carousel-track   (flex row; each child is 100% wide; transform:translateX)
+ *         .power-tagger-slide   (one per category)
+ *           .power-tagger-slide-title
+ *           .power-tagger-slide-body  (scrolls vertically if cards overflow)
+ *             .power-tagger-sub
+ *               .power-tagger-sub-name
+ *               .power-tagger-card-grid   (4-col grid of cards)
+ *                 .power-tagger-card
+ *                   .power-tagger-card-img
+ *                   .power-tagger-card-name
+ *     .power-tagger-nav            (bottom: Back / progress / Next)
+ * ========================================================================= */
+
+.power-tagger-walkthrough {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+/* --- Top strip: clickable category pills ----------------------------------- */
+
+.power-tagger-strip {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 4px;
+  padding: 8px 8px 10px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  /* v0.11.6: strip is the middle flex column; min-width: 0 lets it shrink
+     below content size so it scrolls properly when arrows take their
+     columns. */
+  flex: 1 1 auto;
+  min-width: 0;
+  /* v0.11.7: scroll-padding is 0 (not matching the strip's own padding-
+     left/right). Reason: with 8px scroll-padding, the snap point sat
+     8px in from the strip's viewport-left, leaving an 8px gap where
+     the prior pill's right edge would peek out beside the left arrow
+     (visible-and-hoverable, even firing its title-attribute tooltip).
+     With scroll-padding-left: 0, snapped pills align with the strip's
+     padding-box-left edge — so when scrolled, the prior pill's right
+     edge is `padding-left (8px) + pill-gap (4px)` PAST the viewport
+     edge to the left, fully clipped by overflow.
+
+     The first pill at scrollLeft=0 still gets visual breathing room
+     from the strip's own `padding-left: 8px` (layout property, not
+     snap-math), so we don't lose that. */
+  scroll-padding-left: 1px;
+  scroll-padding-right: 0;
+  /* v0.11.6: scroll-snap. Forces the scroll position to land at a snap
+     point — every pill is a snap point at the "start" (left) edge of
+     the strip's viewport. No more half-visible pills clipped by the
+     strip's overflow boundary, whether scrolling via wheel, trackpad,
+     arrow button, or programmatic scrollIntoView. */
+  scroll-snap-type: x mandatory;
+}
+
+/* v0.11.6: outer wrapper as a flex row hosting [left-arrow?] [strip]
+   [right-arrow?]. Arrows are flex columns (NOT absolute overlays), so
+   pills inside the strip can never slide visually under an arrow — the
+   scrollable area is naturally narrower when an arrow is present.
+   The bottom border lives here so it spans both arrows and the strip
+   uninterrupted. align-items:center keeps the pill-shaped arrows
+   vertically centred against the slightly taller strip row. */
+.power-tagger-strip-wrap {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+/* Scroll-arrow buttons. v0.11.7: visually match the category pills —
+   same border colour, same border-radius (pill), same height (26px from
+   border + padding equivalence), transparent background so they feel
+   like part of the same family of controls. The chevron uses the same
+   muted text colour as inactive pills, brightening on hover the same
+   way pills do. Width is fixed to 28px (round-ish, just enough for the
+   chevron) so the arrow reads as a circle rather than an oblong.
+   align-items:center on the wrap centres them vertically against the
+   strip's slightly taller scroll row. */
+.power-tagger-strip-arrow {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 999px;
+  width: 28px;
+  height: 26px;
+  color: #bbb;
+  cursor: pointer;
+  padding: 0;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.power-tagger-strip-arrow-left {
+  margin-left: 8px;
+  margin-right: 4px;
+}
+
+.power-tagger-strip-arrow-right {
+  margin-left: 4px;
+  margin-right: 8px;
+}
+
+.power-tagger-strip-arrow:hover {
+  border-color: #555;
+  color: #eee;
+}
+
+.power-tagger-strip-arrow:active {
+  border-color: #777;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.power-tagger-strip-item {
+  background: transparent;
+  border: 1px solid #333;
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #bbb;
+  white-space: nowrap;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+  flex-shrink: 0;
+  /* v0.11.6: snap point for the strip's scroll-snap-type:x mandatory.
+     start = the pill's left edge aligns with the strip viewport's
+     start edge. With scroll-padding-left: 0 on the strip and no
+     scroll-margin on the pill, a snapped pill renders flush against
+     the strip's outer-left (= flush against the left arrow, modulo
+     the arrow's own margin-right). Means the strip can NEVER stop
+     with a pill half-clipped at the left boundary, AND the prior
+     pill is rendered fully off-screen so no white edge peeks out
+     beside the arrow. */
+  scroll-snap-align: start;
+}
+
+.power-tagger-strip-item:hover {
+  border-color: #555;
+  color: #eee;
+}
+
+.power-tagger-strip-item-active {
+  border-color: transparent;
+  font-weight: 600;
+}
+
+/* v0.11.5: theme-proof colour inheritance for descendants of the
+   active pill. Themes like Glassy paint inner spans white with
+   high specificity, which broke our auto-contrast text colour when
+   a bright cat colour is the pill background. Forcing inherit
+   !important on all descendants means the pill's inline `color`
+   (computed from pickTextColour) wins regardless of theme.
+   Warn icons (their own colour) are exempted via :not(). */
+.power-tagger-strip-item-active *:not(.power-tagger-strip-warn-hard) {
+  color: inherit !important;
+}
+
+.power-tagger-strip-check {
+  font-size: 12px;
+  font-weight: 700;
+  opacity: 0.9;
+}
+
+/* --- Carousel viewport + sliding track ------------------------------------- */
+
+.power-tagger-carousel-viewport {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+}
+
+.power-tagger-carousel-track {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.28s ease;
+  will-change: transform;
+}
+
+.power-tagger-slide {
+  flex: 0 0 100%;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.power-tagger-slide-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #f0f0f0;
+  border-left: 4px solid #5a6e85;
+  background: #181818;
+  flex-shrink: 0;
+}
+
+.power-tagger-slide-title-swatch {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+}
+
+.power-tagger-slide-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+  /* Smooth-scroll any single scrollTop write the JS makes. Used by the
+   * auto-advance-to-next-sub flow on card click. */
+  scroll-behavior: smooth;
+  /* Snap to sub blocks vertically. Combined with scroll-snap-align on
+   * each .power-tagger-sub, this makes JS-driven scrolls (our click-to-
+   * next-sub flow) land cleanly on sub boundaries. We use `proximity`
+   * (not `mandatory`) so manual scrolling can settle anywhere — important
+   * because a sub may be taller than the viewport, and the user needs to
+   * be able to scroll through and rest at the bottom of it without the
+   * browser yanking them to the next snap line. */
+  scroll-snap-type: y proximity;
+}
+
+/* --- Subcategory grouping inside a slide ----------------------------------- */
+
+.power-tagger-sub {
+  margin-bottom: 12px;
+  border-radius: 6px;
+  background: #181818;
+  overflow: hidden;
+  /* Snap-align so JS scrolls (click-to-next-sub) land cleanly on this
+   * block. Combined with `scroll-snap-type: y proximity` on the parent,
+   * this means manual scrolling is free but click-driven scrolls snap. */
+  scroll-snap-align: start;
+  scroll-snap-stop: always;
+}
+
+.power-tagger-sub:last-child {
+  margin-bottom: 0;
+}
+
+/* Clickable sub header — chevron + name + count, full width, no border. */
+.power-tagger-sub-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  user-select: none;
+  background: #1d1d1d;
+  border-bottom: 1px solid #232323;
+  transition: background 0.1s ease;
+}
+
+.power-tagger-sub-header:hover {
+  background: #232323;
+}
+
+.power-tagger-sub-toggle {
+  font-size: 10px;
+  width: 12px;
+  color: #aaa;
+}
+
+.power-tagger-sub-name {
+  color: #ccc;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex: 1;
+}
+
+.power-tagger-sub-count {
+  color: #888;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* v0.11.4: Navigation state markers on each sub.
+ *
+ * Current sub: a left-edge accent stripe + slight header tint.
+ * Past sub (already advanced past): \u2713 mark in header. Header
+ *   dimmed slightly so the eye is drawn to the current/future
+ *   work instead of completed bits.
+ */
+.power-tagger-sub-current {
+  position: relative;
+}
+
+.power-tagger-sub-current::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--power-tagger-sub-stripe, #ffb84d);
+  border-radius: 2px 0 0 2px;
+}
+
+.power-tagger-sub-current .power-tagger-sub-header {
+  background: #242022;
+}
+
+.power-tagger-sub-current .power-tagger-sub-name {
+  color: #fff;
+}
+
+.power-tagger-sub-past .power-tagger-sub-header {
+  opacity: 0.65;
+}
+
+.power-tagger-sub-done {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #2d6a3d;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 6px;
+  flex-shrink: 0;
+}
+
+/* Card grid is the body of an open sub — sits inside .power-tagger-sub. */
+.power-tagger-sub-open .power-tagger-card-grid {
+  padding: 12px;
+}
+
+/* --- The card grid ---------------------------------------------------------
+ *
+ * v0.11.3: fixed 5-column layout. Each card takes 1/5 of the row
+ * minus gaps, so wide rows fill cleanly. Categories with fewer
+ * than 5 cards leave whitespace on the right \u2014 cards never grow
+ * beyond 1/5 of the pane width. This means:
+ *   - 5 cards: row is full, no empty space
+ *   - 2 cards: 2 normal-sized cards at left, 3-col-wide empty space
+ *   - 10+ cards: wraps to multiple rows, all evenly sized
+ * Combined with aspect-ratio: 1/1 on the image, card height
+ * follows the column width directly.
+ */
+
+.power-tagger-card-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Polaroid card: square image on top, name strip below in cat colour. */
+.power-tagger-card {
+  display: flex;
+  flex-direction: column;
+  background: #1f1f1f;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+}
+
+.power-tagger-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.power-tagger-card:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+}
+
+.power-tagger-card-img {
+  aspect-ratio: 1 / 1;
+  width: 100%;
+  background-color: #0e0e0e;
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+.power-tagger-card-name {
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.25;
+  word-break: break-word;
+  /* Lock the name strip to a 3-line height so cards with 1/2/3-line
+   * names all line up in the grid.
+   *   line-height (1.25) × font-size (13) × 3 lines ≈ 49px text area
+   *   + 16px vertical padding ≈ 65px total
+   * Flex centring vertically centres short names within that 65px;
+   * a long 3-line name fills it exactly. min-height (not height) lets
+   * an unusually long 4-line name still grow rather than clip. */
+  min-height: 65px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- Nav bar: Back / progress / Next --------------------------------------- */
+
+/* v0.11.4: Bottom nav bar laid out as 3 columns:
+ *   - Left:   Back + Skip cat (paired)
+ *   - Centre: progress indicator, dead-centre regardless of either side
+ *   - Right:  Next (or Advance / Save)
+ *
+ * 3-col grid (vs flex space-between) gives the progress indicator
+ * its own column. With flex space-between and uneven side widths
+ * the progress wandered off-centre; with a grid each column is
+ * 1fr so the centre column is centred relative to the nav, not to
+ * whatever spans around it.
+ */
+.power-tagger-nav {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 18px;
+  border-top: 1px solid #2c2c2c;
+  background: #1c1c1c;
+  flex-shrink: 0;
+}
+
+.power-tagger-nav-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: start;
+}
+
+.power-tagger-nav-centre {
+  justify-self: center;
+}
+
+.power-tagger-nav-right {
+  justify-self: end;
+}
+
+/* Big primary/back buttons, sized for fast tagging muscle
+ * memory. Vertical padding + minimum height for easy click
+ * targets. Letter-spacing + uppercase nothing fancy, just clear. */
+.power-tagger-nav-btn {
+  min-width: 130px;
+  min-height: 48px;
+  padding: 12px 22px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition:
+    transform 0.08s ease,
+    box-shadow 0.12s ease,
+    background 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.power-tagger-nav-btn:not(:disabled):hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.power-tagger-nav-btn:not(:disabled):active {
+  transform: translateY(0);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Skip cat \u2014 secondary, smaller than Back/Next so it doesn't
+ * compete. Subtle dashed border to read as a "shortcut" action. */
+.power-tagger-nav-skip {
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border-radius: 6px;
+  color: #bbb;
+  background: transparent;
+  border: 1px dashed #4a4a4a;
+  transition: border-color 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+.power-tagger-nav-skip:hover {
+  color: #fff;
+  border-color: #7a7a7a;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.power-tagger-nav-progress {
+  color: #aaa;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.05em;
+}
+
+/* Contextual Next: when about to cross cats, the inline `style`
+ * prop fills with the next cat's colour. The class just adds a
+ * thin glow so the colour change feels intentional. */
+.power-tagger-nav-cross {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+/* Save state (last position). Green to signal "you're done". */
+.power-tagger-nav-save {
+  background: #2d6a3d !important;
+  border-color: #2d6a3d !important;
+  color: #fff !important;
+}
+.power-tagger-nav-save:hover {
+  background: #347a48 !important;
+  border-color: #347a48 !important;
+}
+
+/* ===========================================================================
+ * Bottom TagSelect + footer
+ * ========================================================================= */
+
+.power-tagger-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.power-tagger-count {
+  margin-right: auto;
+  color: #999;
+  font-size: 13px;
+}
+
+/* v0.11.5: "Organise on save" checkbox sitting immediately before
+   the Save button in the walkthrough footer. */
+.power-tagger-organise-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: #ccc;
+  font-size: 13px;
+  user-select: none;
+  cursor: pointer;
+}
+.power-tagger-organise-toggle input[type="checkbox"] {
+  margin: 0;
+  cursor: pointer;
+}
+.power-tagger-organise-toggle input[type="checkbox"]:disabled {
+  cursor: default;
+}
+
+/* ===========================================================================
+ * Picker phase + active-config bar
+ * ===========================================================================
+ *
+ * v0.11.4: Elevated picker design. The picker is the gateway \u2014
+ * first thing the user sees \u2014 so it gets a hero header, generous
+ * spacing, a 3-col fixed grid (one-off behaviour just for here),
+ * and a description box that appears on selection so the user
+ * sees what they're committing to before Confirm.
+ *
+ * Layout: right pane is a vertical flex column with .power-tagger-
+ * picker-inner centred vertically. inner stacks: hero \u2192 grid \u2192
+ * preview. Bottom Confirm/Cancel row stays in its grid cell.
+ */
+
+.power-tagger-picker {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 28px 12px;
+  overflow: hidden;
+}
+
+/* v0.11.6: layout becomes a three-row stack inside a flex column —
+ *   - hero (fixed at top)
+ *   - grid (scrolls internally if overflowing)
+ *   - preview/placeholder (fixed at bottom)
+ * This pins the preview to the bottom of the column so the user
+ * can never scroll past it. */
+.power-tagger-picker-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  max-width: 1040px;
+  margin: 0 auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.power-tagger-picker-hero {
+  flex-shrink: 0;
+}
+
+/* Scrollable area between hero and preview. Wraps the grid so the
+   grid itself keeps its natural sizing while the wrapper scrolls.
+   Padding gives hover/select transforms room to breathe. */
+.power-tagger-picker-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 8px 14px 12px;
+}
+
+.power-tagger-picker-preview,
+.power-tagger-picker-preview-placeholder {
+  flex-shrink: 0;
+}
+
+/* Hero: vertical accent stripe + big title + descriptive subtitle. */
+.power-tagger-picker-hero {
+  padding: 2px 0 2px 16px;
+  border-left: 4px solid #4a9eff;
+}
+
+.power-tagger-picker-hero-title {
+  margin: 0 0 4px;
+  color: #fff;
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+
+.power-tagger-picker-hero-sub {
+  margin: 0;
+  color: #aaa;
+  font-size: 13px;
+  line-height: 1.5;
+  max-width: 640px;
+}
+
+/* Empty state (no Configuration tags found). */
+.power-tagger-picker-empty {
+  padding: 24px;
+  border: 1px dashed #3a3a3a;
+  border-radius: 10px;
+  color: #aaa;
+  font-size: 14px;
+  line-height: 1.55;
+  text-align: center;
+  background: rgba(255, 255, 255, 0.015);
+}
+
+/* Picker grid \u2014 ONE-OFF: fixed 4 columns. The rest of the plugin
+ * uses 5 cols with auto-shrink; the picker stays 4-wide because
+ * (a) there are usually only 5-7 config options, (b) the cards are
+ * the visual centrepiece here, and (c) the user explicitly wanted
+ * this to look different from the rest of the plugin.
+ *
+ * If you ever have MORE than ~12 config tags the grid will scroll
+ * vertically. */
+.power-tagger-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.power-tagger-picker-card {
+  transition:
+    transform 0.18s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.18s ease,
+    box-shadow 0.2s ease,
+    outline-color 0.18s ease;
+  outline: 3px solid transparent;
+  outline-offset: 2px;
+}
+
+.power-tagger-picker-card:hover {
+  transform: translateY(-3px) scale(1.02);
+  box-shadow: 0 10px 22px rgba(0, 0, 0, 0.55);
+}
+
+.power-tagger-picker-card-selected {
+  transform: translateY(-2px) scale(1.04);
+  outline-color: #4a9eff;
+  box-shadow: 0 0 0 3px #4a9eff, 0 10px 30px rgba(0, 0, 0, 0.55);
+  z-index: 1;
+}
+
+.power-tagger-picker-card-selected:hover {
+  transform: translateY(-3px) scale(1.04);
+}
+
+/* v0.11.5: when a card is selected, slightly dim it AND its tag-icon
+   colour, matching how a staged tag card looks in the walkthrough.
+   The transform/outline above gives it the "I'm picked" pop; this
+   gives it the "I'm done, locked in" greyed-out feel. */
+.power-tagger-picker-card-selected .power-tagger-card-img {
+  opacity: 0.5;
+  filter: grayscale(0.3);
+}
+
+/* Dim non-selected cards once a selection has been made so the
+ * selected card visually pops. Keeps the others clickable. */
+.power-tagger-picker-card-dimmed {
+  opacity: 0.45;
+}
+.power-tagger-picker-card-dimmed:hover {
+  opacity: 0.85;
+}
+
+.power-tagger-picker-card-name {
+  background-color: #2a2a2a;
+  color: #ddd;
+}
+
+.power-tagger-picker-card-selected .power-tagger-picker-card-name {
+  background-color: #1e5fa3;
+  color: #fff;
+}
+
+/* Description box: appears once a config is selected. Layout:
+ *   - Header row: cat colour swatch + title + stats on right
+ *   - Optional description line (author-supplied)
+ *   - Optional mismatch warning (auto-select rule failed)
+ *   - Closing hint about Confirm
+ *
+ * v0.11.5: fixed height envelope so switching between configs
+ * doesn't reflow the picker grid above. The placeholder below
+ * uses the same min-height so the transition from "nothing
+ * selected" to "selected" doesn't jump either. Internal content
+ * scrolls if it overflows (rare — descriptions are capped at 150
+ * chars, mismatch/positive trace blocks are bounded in size). */
+.power-tagger-picker-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 16px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid #2c2c2c;
+  border-left: 4px solid #4a9eff;
+  border-radius: 8px;
+  animation: power-tagger-picker-preview-in 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
+  min-height: 200px;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+@keyframes power-tagger-picker-preview-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.power-tagger-picker-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.power-tagger-picker-preview-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.power-tagger-picker-preview-headtext {
+  flex: 1;
+  min-width: 0;
+}
+
+.power-tagger-picker-preview-eyebrow {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888;
+  margin-bottom: 1px;
+}
+
+.power-tagger-picker-preview-title {
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+/* Stats: cat count + tag count laid out side by side, tabular numbers. */
+.power-tagger-picker-preview-stats {
+  display: flex;
+  gap: 14px;
+  flex-shrink: 0;
+}
+
+.power-tagger-picker-preview-stat {
+  text-align: right;
+}
+
+.power-tagger-picker-preview-stat-num {
+  color: #fff;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.power-tagger-picker-preview-stat-label {
+  margin-top: 3px;
+  color: #888;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Author-supplied description line. Single short paragraph,
+ * truncated to ~150 chars by the JS. Quoted with a left rule so
+ * it reads as commentary, not body text. */
+.power-tagger-picker-preview-desc {
+  color: #ddd;
+  font-size: 13px;
+  line-height: 1.5;
+  padding-left: 10px;
+  border-left: 2px solid #3a3a3a;
+  font-style: italic;
+}
+
+/* Auto-select rule mismatch warning. Amber tint so it reads as
+ * an issue without being aggressive (user can still proceed if
+ * intentional). Failing condition summaries appear inline. */
+.power-tagger-picker-preview-mismatch {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(232, 168, 73, 0.08);
+  border: 1px solid rgba(232, 168, 73, 0.35);
+  border-radius: 6px;
+  color: #e8a849;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.power-tagger-picker-preview-mismatch-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.power-tagger-picker-preview-mismatch-text {
+  flex: 1;
+  min-width: 0;
+  color: #d8d8d8;
+}
+.power-tagger-picker-preview-mismatch-text strong {
+  color: #ffba5a;
+  font-weight: 700;
+}
+
+/* v0.11.4: Positive "auto-suggested because" trace. Same layout
+ * shape as the mismatch block, green tint. Shown when the config
+ * was auto-picked AND its rule matches \u2014 explains WHICH rule
+ * said yes. Manual selections don't get this affirmation. */
+.power-tagger-picker-preview-match {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  background: rgba(73, 200, 110, 0.08);
+  border: 1px solid rgba(73, 200, 110, 0.35);
+  border-radius: 6px;
+  color: #6ee08f;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.power-tagger-picker-preview-match-icon {
+  font-size: 14px;
+  line-height: 1;
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: #6ee08f;
+  font-weight: 700;
+}
+.power-tagger-picker-preview-match-text {
+  flex: 1;
+  min-width: 0;
+  color: #d8d8d8;
+  /* Clamp to a single line so a long studio/performer name can't
+   * push the box off-screen. The configure-walkthrough phase fits
+   * in a viewport-height-bounded card, so overflow here cascades
+   * badly. ellipsis is honest about the truncation. */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.power-tagger-picker-preview-match-text strong {
+  color: #6ee08f;
+  font-weight: 700;
+}
+
+.power-tagger-picker-preview-hint {
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.power-tagger-picker-preview-hint strong {
+  color: #fff;
+}
+
+/* Placeholder when no selection yet. Quieter than the preview box
+ * so it doesn't compete. */
+.power-tagger-picker-preview-placeholder {
+  padding: 14px 16px;
+  border: 1px dashed #2c2c2c;
+  border-radius: 8px;
+  color: #888;
+  font-size: 13px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Config bar above the top strip during walkthrough phase. */
+.power-tagger-config-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 12px;
+  border-bottom: 1px solid #2c2c2c;
+  background: #161616;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+
+.power-tagger-config-bar-label {
+  color: #ccc;
+  font-weight: 700;
+}
+
+/* v0.11.5: coloured pill for the active config name. Background +
+   text colour are set inline from JS using the Configuration cat's
+   colour + an auto-contrast text choice. Border-radius + padding
+   here just shape it into a pill. */
+.power-tagger-config-bar-name {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 700;
+  background: #2c2c2c; /* fallback if inline style absent */
+  color: #f0f0f0;      /* fallback */
+  border: 1px solid transparent;
+  line-height: 1.4;
+}
+
+/* v0.11.5: distinct accent for the "Change Configuration" button so
+   it stands out from the surrounding grey controls without waiting
+   on hover/active state. */
+.power-tagger-config-bar-change {
+  margin-left: auto;
+  background-color: #2e7dd1 !important;
+  border-color: #2e7dd1 !important;
+  color: #fff !important;
+}
+.power-tagger-config-bar-change:hover:not(:disabled),
+.power-tagger-config-bar-change:focus:not(:disabled) {
+  background-color: #3d8ee0 !important;
+  border-color: #3d8ee0 !important;
+}
+.power-tagger-config-bar-change:active:not(:disabled) {
+  background-color: #2569b3 !important;
+  border-color: #2569b3 !important;
+}
+
+/* ===========================================================================
+ * Rules Editor (Settings → Plugins → "Edit Power Tagger Rules")
+ * ========================================================================= */
+
+.power-tagger-rules-layout {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.power-tagger-rules-main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.power-tagger-rules-rail {
+  width: 220px;
+  flex-shrink: 0;
+  border-right: 1px solid #2c2c2c;
+  overflow-y: auto;
+  background: #161616;
+  display: flex;
+  flex-direction: column;
+}
+
+.power-tagger-rules-rail-header {
+  padding: 12px 14px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+.power-tagger-rules-rail-item {
+  /* Flex so the name can ellipsis-truncate independently of the
+   * trailing tag-icon / no-tag badge -- long names no longer push
+   * the indicator out of view. */
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  padding: 9px 14px;
+  font-size: 13px;
+  color: #ccc;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+
+.power-tagger-rules-rail-name {
+  /* Shrinkable flex item so ellipsis kicks in here, not on the icon. */
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.power-tagger-rules-rail-item:hover {
+  background: #1d1d1d;
+  color: #fff;
+}
+
+.power-tagger-rules-rail-item-active {
+  background: #1e1e1e;
+  color: #fff;
+  border-left-color: #4a9eff;
+  font-weight: 600;
+}
+
+.power-tagger-rules-pane {
+  flex: 1;
+  min-width: 0;
+  overflow-y: auto;
+  padding: 14px 18px;
+}
+
+/* Active configuration header at the top of the right pane. Mirrors
+ * the rail selection on the main side so you always know which
+ * config the rules / categories below belong to -- especially
+ * helpful when the name is ellipsis-truncated in the rail. */
+.power-tagger-rules-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 12px 12px;
+  margin: 0 0 14px;
+  border-left: 4px solid #444;
+  border-bottom: 1px solid #2c2c2c;
+}
+.power-tagger-rules-pane-title {
+  margin: 0;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.power-tagger-rules-pane-tagicon {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+.power-tagger-rules-pane-tagicon svg {
+  width: 14px;
+  height: 14px;
+}
+.power-tagger-rules-pane-notag {
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #777;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 4px;
+  flex: 0 0 auto;
+}
+
+.power-tagger-rules-tree {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.power-tagger-rules-cat {
+  background: #181818;
+  border-radius: 6px;
+  border-left: 4px solid #5a6e85;
+  overflow: hidden;
+}
+
+.power-tagger-rules-cat-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #1c1c1c;
+  border-bottom: 1px solid #232323;
+}
+
+.power-tagger-rules-cat-name {
+  flex: 1;
+  color: #f0f0f0;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.power-tagger-rules-max {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #aaa;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.power-tagger-rules-max-input {
+  width: 56px;
+  padding: 3px 6px;
+  background: #0f0f0f;
+  border: 1px solid #333;
+  border-radius: 3px;
+  color: #f0f0f0;
+  font-size: 12px;
+  text-align: center;
+}
+
+.power-tagger-rules-max-hint {
+  color: #666;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.power-tagger-rules-sub {
+  border-top: 1px solid #1f1f1f;
+}
+
+.power-tagger-rules-sub:first-child {
+  border-top: none;
+}
+
+.power-tagger-rules-sub-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 14px;
+  background: #161616;
+  cursor: pointer;
+  user-select: none;
+}
+
+.power-tagger-rules-sub-header:hover {
+  background: #1a1a1a;
+}
+
+.power-tagger-rules-sub-toggle {
+  font-size: 9px;
+  width: 10px;
+  color: #888;
+}
+
+.power-tagger-rules-sub-name {
+  flex: 1;
+  color: #ccc;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.power-tagger-rules-sub-count {
+  color: #777;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.power-tagger-rules-tags {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 4px 16px;
+  padding: 8px 14px 12px 28px;
+}
+
+.power-tagger-rules-tag {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 0;
+  cursor: pointer;
+  color: #ccc;
+  font-size: 12px;
+}
+
+.power-tagger-rules-tag:hover {
+  color: #fff;
+}
+
+.power-tagger-rules-tag-name {
+  word-break: break-word;
+}
+
+.power-tagger-rules-checkbox {
+  flex-shrink: 0;
+  cursor: pointer;
+  width: 14px;
+  height: 14px;
+  accent-color: #4a9eff;
+}
+
+.power-tagger-rules-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 12px 18px;
+  border-top: 1px solid #2c2c2c;
+  background: #1c1c1c;
+  flex-shrink: 0;
+}
+
+.power-tagger-rules-status {
+  margin-right: auto;
+  color: #888;
+  font-size: 12px;
+}
+
+/* Rules editor — per-config options panel above the category tree. */
+
+.power-tagger-rules-options {
+  background: #181818;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-left: 4px solid #2c2c2c;
+}
+
+.power-tagger-rules-option {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #ccc;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.power-tagger-rules-option-hint {
+  color: #888;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+/* v0.14.0: shown in place of the auto-stage checkbox for a tagless
+ * (rules-only) configuration. */
+.power-tagger-rules-option-note {
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* ===========================================================================
+ * Staged-state styling (upper-panel cards already in selectedTags)
+ * ========================================================================= */
+
+.power-tagger-card {
+  position: relative;  /* anchor for the check badge */
+}
+
+/* Dimmed look for already-staged cards. Still clickable (toggles off). */
+.power-tagger-card-staged {
+  opacity: 0.45;
+  filter: saturate(0.7);
+}
+
+.power-tagger-card-staged:hover {
+  opacity: 0.7;
+  filter: saturate(0.85);
+}
+
+/* Tick badge in the top-right corner of staged cards. */
+.power-tagger-card-check {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #2c8a3e;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  z-index: 2;
+}
+
+/* Top-strip pill: staged-count badge alongside the existing ✓. */
+.power-tagger-strip-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 4px;
+}
+
+/* On the active (coloured) pill, lighten the badge so it remains readable. */
+.power-tagger-strip-item-active .power-tagger-strip-badge {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* ===========================================================================
+ * Warnings (b)
+ * ========================================================================= */
+
+/* Pill icon for cats with issues. */
+.power-tagger-strip-warn {
+  margin-left: 4px;
+  color: #ff9b3a;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.power-tagger-strip-item-warn {
+  border-color: #aa6300;
+}
+
+.power-tagger-strip-item-warn:hover {
+  border-color: #ff9b3a;
+}
+
+/* In-slide warning banner — sits between slide title and slide body. */
+.power-tagger-warn-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: #3a1a1a;
+  border-left: 3px solid #c44;
+  border-bottom: 1px solid #232323;
+  color: #ffd9d9;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.power-tagger-warn-banner-top {
+  /* The top-level cross-cutting banner sits at the very top of the walk-
+   * through, above the strip. Slightly distinct styling so users can tell
+   * it from the per-slide variant. */
+  margin: 0;
+  border-left: none;
+  border-bottom: 1px solid #2c2c2c;
+  background: #2e1a1a;
+}
+
+/* v0.11.4: Config-mismatch variant. Violet-blue tint instead of
+ * the standard red/amber so users can distinguish "scene-data
+ * doesn't match the active config" from regular tag warnings.
+ * Uses the gear icon (\u2699) which the JS sets. */
+.power-tagger-warn-banner-config {
+  background: #1c1f2e;
+  border-bottom: 1px solid #2c2f3a;
+}
+.power-tagger-warn-banner-config .power-tagger-warn-icon {
+  color: #8a8aff;
+}
+.power-tagger-warn-banner-config .power-tagger-warn-line strong {
+  color: #c8d0ff;
+}
+
+.power-tagger-warn-icon {
+  font-size: 18px;
+  color: #ff9b3a;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.power-tagger-warn-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.power-tagger-warn-line {
+  word-break: break-word;
+}
+
+/* Secondary line inside a warn-banner \u2014 dimmer + smaller text
+ * for "Failing: X; Y" details under the main message. */
+.power-tagger-warn-sub {
+  margin-top: 4px;
+  color: #aaa;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.power-tagger-warn-fix {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Rules editor — per-sub max selections input. */
+.power-tagger-rules-submax {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-left: 8px;
+  color: #888;
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.power-tagger-rules-submax .power-tagger-rules-max-input {
+  width: 44px;
+  padding: 2px 4px;
+  font-size: 11px;
+}
+
+/* ===========================================================================
+ * Rules editor — Cascades panel
+ * ========================================================================= */
+
+.power-tagger-rules-cascades {
+  background: #181818;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  border-left: 4px solid #2c2c2c;
+  overflow: hidden;
+}
+
+.power-tagger-rules-cascades-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  background: #1c1c1c;
+  cursor: pointer;
+  user-select: none;
+  border-bottom: 1px solid #232323;
+}
+
+.power-tagger-rules-cascades-header:hover {
+  background: #1f1f1f;
+}
+
+.power-tagger-rules-cascades-toggle {
+  font-size: 11px;
+  width: 12px;
+  color: #aaa;
+}
+
+.power-tagger-rules-cascades-title {
+  color: #f0f0f0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.power-tagger-rules-cascades-count {
+  color: #aaa;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.power-tagger-rules-cascades-hint {
+  color: #777;
+  font-size: 11px;
+  font-weight: 400;
+  margin-left: 4px;
+}
+
+.power-tagger-rules-cascades-body {
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.power-tagger-rules-cascades-empty {
+  color: #888;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.power-tagger-cascade-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1.5fr auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  border: 1px solid #232323;
+}
+
+.power-tagger-cascade-field {
+  min-width: 0;
+}
+
+.power-tagger-cascade-label {
+  color: #888;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.power-tagger-cascade-arrow {
+  color: #888;
+  font-size: 18px;
+}
+
+.power-tagger-cascade-remove {
+  align-self: end;
+  white-space: nowrap;
+}
+
+.power-tagger-rules-cascades-add {
+  align-self: flex-start;
+}
+
+/* ===========================================================================
+ * Rules editor — Conditionals panel
+ *
+ * Reuses .power-tagger-rules-cascades container/header/body styling (the
+ * conditionalsPanel deliberately uses those class names so it inherits the
+ * collapsible look). Below are only the bits unique to conditional rows.
+ * ========================================================================= */
+
+.power-tagger-cond-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+  background: #1a1a1a;
+  border-radius: 4px;
+  border: 1px solid #232323;
+}
+
+.power-tagger-cond-head {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr auto;
+  align-items: end;
+  gap: 12px;
+}
+
+.power-tagger-cond-field {
+  min-width: 0;
+}
+
+.power-tagger-cond-field-wide {
+  min-width: 0;
+}
+
+.power-tagger-cond-label {
+  color: #888;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.power-tagger-cond-segmented {
+  display: inline-flex;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.power-tagger-cond-seg {
+  background: #161616;
+  color: #aaa;
+  border: none;
+  padding: 6px 14px;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease;
+}
+
+.power-tagger-cond-seg:hover:not(:disabled) {
+  background: #1d1d1d;
+  color: #fff;
+}
+
+.power-tagger-cond-seg:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.power-tagger-cond-seg-active {
+  background: #4a9eff;
+  color: #fff;
+  font-weight: 600;
+}
+
+.power-tagger-cond-seg-active:hover:not(:disabled) {
+  background: #4a9eff;
+  color: #fff;
+}
+
+.power-tagger-cond-remove {
+  align-self: end;
+  white-space: nowrap;
+}
+
+.power-tagger-cond-targets {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+  padding: 12px;
+  background: #141414;
+  border-radius: 4px;
+}
+
+.power-tagger-cond-target-block {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.power-tagger-cond-target-title {
+  color: #ccc;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.power-tagger-cond-empty {
+  color: #777;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.power-tagger-cond-checkbox-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 3px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding: 4px 4px 4px 0;
+  border-left: 1px solid #232323;
+  padding-left: 8px;
+}
+
+.power-tagger-cond-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ccc;
+  cursor: pointer;
+  word-break: break-word;
+}
+
+.power-tagger-cond-checkbox input[type="checkbox"] {
+  flex-shrink: 0;
+  accent-color: #4a9eff;
+}
+
+.power-tagger-cond-cat-hint {
+  color: #777;
+  font-size: 10px;
+}
+
+.power-tagger-cond-warning {
+  margin-top: 6px;
+  padding: 6px 8px;
+  background: #3a2a1a;
+  border-left: 2px solid #d68b3a;
+  border-radius: 2px;
+  color: #ffd9a8;
+  font-size: 11px;
+}
+
+/* ===========================================================================
+ * Rules editor — per-row collapse strips for conditional rules
+ * ========================================================================= */
+
+.power-tagger-cond-rowhead {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  background: #1c1c1c;
+  border-bottom: 1px solid #232323;
+  cursor: pointer;
+  user-select: none;
+}
+
+.power-tagger-cond-rowhead:hover {
+  background: #1f1f1f;
+}
+
+.power-tagger-cond-rowhead-toggle {
+  flex-shrink: 0;
+  width: 12px;
+  color: #888;
+  font-size: 11px;
+}
+
+.power-tagger-cond-rowhead-summary {
+  flex: 1;
+  min-width: 0;
+  color: #ccc;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.power-tagger-cond-rowhead-remove {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* The body wrapper inside an expanded row. Plain container — needs no
+ * extra padding (the head and targets blocks have their own). */
+.power-tagger-cond-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px;
+}
+
+/* When the rowhead is the LAST element (collapsed state), drop its border. */
+.power-tagger-cond-row > .power-tagger-cond-rowhead:last-child {
+  border-bottom: none;
+}
+
+/* Restructure the existing row — remove the padding/gap since the body
+ * provides its own layout now. */
+.power-tagger-cond-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+}
+
+/* Cascade row's inner grid (was the row layout itself before per-row
+ * collapse was added; now it lives inside .power-tagger-cond-body). */
+.power-tagger-cascade-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1.5fr;
+  align-items: center;
+  gap: 10px;
+}
+
+/* The left field hosts the trigger picker AND the Match toggle below
+ * (positioned absolutely \u2014 see .power-tagger-cascade-mode-row).
+ * `position: relative` anchors that absolute child. `padding-bottom`
+ * reserves vertical space so the Match toggle has room beneath the
+ * picker (and the next row doesn't overlap). */
+.power-tagger-cascade-grid > .power-tagger-cascade-field:first-child {
+  position: relative;
+  padding-bottom: 40px;
+}
+
+/* Match row \u2014 sits below the trigger picker. `bottom: 0` parks it at
+ * the very bottom of the padded field; the 40px padding-bottom above
+ * gives enough vertical room that the toggle doesn't visually overlap
+ * the picker's lower edge. Pulling it out of flow means the grid still
+ * measures the trigger field as picker-only-tall (matching the right
+ * field), so `align-items: center` keeps the arrow vertically centred
+ * on the pickers, not midway down a tall left column. */
+.power-tagger-cascade-mode-row {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-tagger-cascade-mode-label {
+  color: #888;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.power-tagger-cascade-arrow {
+  color: #888;
+  font-size: 18px;
+}
+
+/* The cascade rows themselves no longer need their own padding/grid. */
+.power-tagger-cascade-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  background: #1a1a1a;
+  border-radius: 4px;
+  border: 1px solid #232323;
+}
+
+/* Category-level collapse chevron in the rules editor tree. */
+.power-tagger-rules-cat-header {
+  cursor: pointer;
+  user-select: none;
+}
+
+.power-tagger-rules-cat-header:hover {
+  background: #202020;
+}
+
+.power-tagger-rules-cat-toggle {
+  flex-shrink: 0;
+  width: 14px;
+  color: #aaa;
+  font-size: 11px;
+  margin-right: 2px;
+}
+
+/* ===========================================================================
+ * Rules editor — default-config star button in the left rail
+ * ========================================================================= */
+
+.power-tagger-rules-rail-row {
+  display: flex;
+  align-items: stretch;
+  border-left: 3px solid transparent;
+  transition: background 0.1s ease, border-color 0.1s ease;
+}
+
+.power-tagger-rules-rail-row:hover {
+  background: #1d1d1d;
+}
+
+.power-tagger-rules-rail-row-active {
+  background: #1e1e1e;
+  border-left-color: #4a9eff;
+}
+
+/* The name button — flex-grow so it takes most of the row. Style now
+ * lives on the row, so kill the active styling on the inner button. */
+.power-tagger-rules-rail-row .power-tagger-rules-rail-item {
+  flex: 1;
+  min-width: 0;
+  padding-right: 6px;
+  border-left: none;
+  background: transparent;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.power-tagger-rules-rail-row .power-tagger-rules-rail-item:hover {
+  background: transparent;
+}
+
+.power-tagger-rules-rail-row-active .power-tagger-rules-rail-item {
+  color: #fff;
+  font-weight: 600;
+}
+
+/* Star button — outline by default, filled when this config is the
+ * persisted default. Slightly muted on hover so the user knows it's
+ * clickable but doesn't shout. */
+.power-tagger-rules-rail-star {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #555;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 12px;
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+
+.power-tagger-rules-rail-star:hover {
+  color: #aaa;
+}
+
+.power-tagger-rules-rail-star-active {
+  color: #ffc23a;
+}
+
+.power-tagger-rules-rail-star-active:hover {
+  color: #ffd770;
+}
+
+/* v0.14.0: per-config Rename / Remove icon buttons. Same muted-until-
+ * hover treatment as the star so they sit quietly in the row. */
+.power-tagger-rules-rail-iconbtn {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: #555;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 8px;
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+.power-tagger-rules-rail-iconbtn:hover {
+  color: #ccc;
+}
+.power-tagger-rules-rail-iconbtn-danger:hover {
+  color: #ff6b6b;
+}
+
+/* v0.14.0: compact linked-tag marker — the Font Awesome "tag" glyph
+ * (same icon Stash uses for tags), rendered as an inline SVG. Icon
+ * only; the tag name lives in the title tooltip. */
+.power-tagger-rules-rail-tagicon {
+  /* margin-left removed — the parent button is now flex with gap. */
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+  /* Don't let long config names push us out of view. */
+  flex: 0 0 auto;
+}
+.power-tagger-rules-rail-tagicon svg {
+  width: 11px;
+  height: 11px;
+}
+/* path fill is set inline with !important from JS (see the ref
+ * callback on the SVG path in the rail row render) so per-config
+ * colour survives theme overrides that use `svg path { fill: ...
+ * !important }`. Nothing to do here. */
+
+/* v0.14.0: "no tag" marker shown inline in the config name button for
+ * tagless (rules-only) configurations. */
+.power-tagger-rules-rail-notag {
+  /* margin-left removed -- parent flex gap handles spacing. */
+  font-size: 10px;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #777;
+  border: 1px solid #3a3a3a;
+  border-radius: 3px;
+  padding: 1px 4px;
+  vertical-align: middle;
+  /* Don't let long config names push the badge out of view. */
+  flex: 0 0 auto;
+}
+
+/* v0.14.0: "+ Add configuration" button under the config list. */
+.power-tagger-rules-rail-add {
+  margin: 6px 8px 0;
+  display: block;
+  background: transparent;
+  border: 1px dashed #3f4753;
+  border-radius: 4px;
+  color: #9ab;
+  font-size: 12px;
+  padding: 6px 8px;
+  cursor: pointer;
+  transition: background 0.1s ease, color 0.1s ease, border-color 0.1s ease;
+}
+.power-tagger-rules-rail-add:hover {
+  background: #1e2530;
+  border-color: #4a9eff;
+  color: #cfe3ff;
+}
+
+/* v0.14.0: no-configurations empty state for the rules editor. */
+.power-tagger-rules-noconfigs {
+  max-width: 420px;
+  margin: 60px auto;
+  text-align: center;
+  color: #999;
+}
+.power-tagger-rules-noconfigs-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #ddd;
+  margin-bottom: 8px;
+}
+.power-tagger-rules-noconfigs-text {
+  font-size: 13px;
+  line-height: 1.5;
+  margin-bottom: 16px;
+}
+
+/* ===========================================================================
+ * Performer Rules (v0.11.0)
+ *
+ * Hard-warning banner variant + rules-editor panel for performer rules.
+ * Hard-warning banners reuse .power-tagger-warn-banner as the base and
+ * layer on .power-tagger-warn-banner-hard for a deeper red + heavier text.
+ * ========================================================================= */
+
+/* Hard variant of the in-slide and top-level warning banner. Deeper red
+ * background and a brighter red border + icon. */
+.power-tagger-warn-banner-hard {
+  background: #4a1414;
+  border-left-color: #ff4d4d;
+  color: #ffe5e5;
+}
+
+.power-tagger-warn-banner-top.power-tagger-warn-banner-hard {
+  background: #3a1212;
+}
+
+.power-tagger-warn-banner-hard .power-tagger-warn-line strong {
+  color: #ff8b8b;
+}
+
+.power-tagger-warn-icon-hard {
+  color: #ff4d4d !important;
+}
+
+/* Strip pill — hard-warning variant. Keeps the orange border for "has
+ * any warning" but layers a red right-side accent when a hard-warning is
+ * the cause. Subtle enough not to fight with the active state. */
+.power-tagger-strip-item-warn-hard {
+  border-color: #c44 !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 80, 80, 0.35);
+}
+
+.power-tagger-strip-warn-hard {
+  color: #ff4d4d !important;
+}
+
+/* ---------- Rules editor: Performer Rules panel ----------------------- */
+
+/* The panel root reuses .power-tagger-rules-cascades for chrome; we only
+ * override what needs distinguishing.
+ *
+ * Three rule-section panels are colour-coded so they read as part of a
+ * matched set. All three share the same darkness + saturation:
+ *   - Cascades:        green   #2c6e3c  (hsl 140, 43%, 30%)
+ *   - Conditionals:    blue    #2c4f6e  (hsl 210, 43%, 30%)
+ *   - Constraint rules red     #6e2c2c  (hsl 0,   43%, 30%)
+ * Neutral grey (#2c2c2c) is the default when no modifier is set.
+ */
+.power-tagger-rules-cascades-panel {
+  border-left-color: #2c6e3c;
+}
+
+.power-tagger-rules-conditionals-panel {
+  border-left-color: #2c4f6e;
+}
+
+.power-tagger-rules-pr {
+  border-left-color: #6e2c2c;
+}
+
+/* v0.11.4: Auto-select panel \u2014 violet accent so it stands out
+ * from the cascades / conditionals / constraints triad. Lives at
+ * the top of the Rules section because it's the entry point: it
+ * decides whether this config gets picked at all. */
+.power-tagger-rules-autoselect-panel {
+  border-left-color: #6e3c6e;
+}
+
+/* Section header inside the panel body \u2014 separates Description
+ * from Auto-select rule. */
+.power-tagger-as-section {
+  margin-bottom: 14px;
+}
+.power-tagger-as-section:last-child {
+  margin-bottom: 0;
+}
+
+.power-tagger-as-section-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: #ccc;
+  margin-bottom: 4px;
+}
+
+.power-tagger-as-section-hint {
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+/* Description textarea. Compact (rows 2), full-width, soft focus. */
+.power-tagger-as-desc {
+  width: 100%;
+  background: #1a1a1a;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  padding: 6px 8px;
+  color: #ddd;
+  font-size: 13px;
+  line-height: 1.5;
+  resize: vertical;
+  font-family: inherit;
+}
+.power-tagger-as-desc:focus {
+  outline: none;
+  border-color: #6e3c6e;
+}
+.power-tagger-as-desc-over {
+  border-color: #b87a31;
+}
+
+.power-tagger-as-desc-counter {
+  margin-top: 4px;
+  color: #888;
+  font-size: 11px;
+  text-align: right;
+}
+.power-tagger-as-desc-counter-over {
+  color: #e8a849;
+}
+.power-tagger-as-desc-counter-note {
+  color: #b87a31;
+  font-style: italic;
+}
+
+/* Add-rule button \u2014 dashed border, lighter. Disappears once a
+ * rule is added (replaced by the rule editor itself). */
+.power-tagger-as-add-rule {
+  padding: 8px 14px;
+  font-size: 13px;
+  border: 1px dashed #5a5a5a;
+  background: transparent;
+  color: #bbb;
+}
+.power-tagger-as-add-rule:hover {
+  color: #fff;
+  border-color: #888;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Rule wrapper once a rule exists. Boxed slightly so it reads as
+ * a distinct group. */
+.power-tagger-as-rule {
+  background: #1a1a1a;
+  border: 1px solid #2c2c2c;
+  border-radius: 5px;
+  padding: 10px 12px;
+}
+
+/* v0.11.4: Multiple rules stack vertically with a clear gap so
+ * each pattern reads as discrete. The combinator line above tells
+ * the user they're OR'd. */
+.power-tagger-as-rules {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.power-tagger-as-rules-combinator {
+  color: #aaa;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.power-tagger-as-rules-combinator strong {
+  color: #c8a8e0;  /* picks up violet accent */
+  font-weight: 700;
+}
+
+/* "Rule N" badge inside the rule-header. Only shown when there
+ * are multiple rules \u2014 with one rule there's nothing to
+ * disambiguate. */
+.power-tagger-as-rule-num {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #2a1f2a;
+  color: #c8a8e0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin-right: 4px;
+}
+
+/* "+ Add another rule" row sits below the rule list with a bit of
+ * breathing room. */
+.power-tagger-as-add-rule-row {
+  margin-top: 10px;
+  display: flex;
+}
+
+.power-tagger-as-add-another-rule {
+  flex: 1;
+  padding: 8px 14px;
+  font-size: 12px;
+  border: 1px dashed #5a3a5a;
+  background: transparent;
+  color: #bbb;
+}
+.power-tagger-as-add-another-rule:hover {
+  color: #fff;
+  border-color: #8a5a8a;
+  background: rgba(110, 60, 110, 0.08);
+}
+
+.power-tagger-as-rule-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  gap: 12px;
+}
+
+.power-tagger-as-mode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-tagger-as-mode-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: #aaa;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.power-tagger-as-remove-rule {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+/* Empty state \u2014 shown when a rule exists but no conditions yet. */
+.power-tagger-as-empty {
+  padding: 12px;
+  border: 1px dashed #3a3a3a;
+  border-radius: 4px;
+  color: #888;
+  font-size: 12px;
+  text-align: center;
+  font-style: italic;
+}
+
+/* Condition rows */
+.power-tagger-as-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.power-tagger-as-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: #181818;
+  border: 1px solid #262626;
+  border-radius: 4px;
+}
+
+.power-tagger-as-row-label {
+  min-width: 220px;
+  font-size: 12px;
+  color: #ddd;
+  font-weight: 600;
+}
+
+.power-tagger-as-row-values {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+}
+
+.power-tagger-as-select,
+.power-tagger-as-text,
+.power-tagger-as-num {
+  background: #1a1a1a;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: #ddd;
+  font-size: 12px;
+  font-family: inherit;
+}
+.power-tagger-as-select:focus,
+.power-tagger-as-text:focus,
+.power-tagger-as-num:focus {
+  outline: none;
+  border-color: #6e3c6e;
+}
+
+.power-tagger-as-op {
+  min-width: 90px;
+}
+
+.power-tagger-as-num {
+  width: 80px;
+  font-variant-numeric: tabular-nums;
+}
+
+.power-tagger-as-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.power-tagger-as-cat {
+  min-width: 160px;
+}
+
+.power-tagger-as-and {
+  color: #888;
+  font-size: 11px;
+  text-transform: lowercase;
+}
+
+.power-tagger-as-remove {
+  flex-shrink: 0;
+  min-width: 28px !important;
+  padding: 2px 8px !important;
+  font-size: 14px !important;
+  line-height: 1 !important;
+  opacity: 0.7;
+}
+.power-tagger-as-remove:hover {
+  opacity: 1;
+}
+
+/* Add condition row \u2014 dropdown that resets to placeholder on
+ * pick. Optgroup labels (Performers / Tags / Scene metadata) keep
+ * the 14-option list scannable. */
+.power-tagger-as-add-row {
+  margin-top: 8px;
+  display: flex;
+}
+
+.power-tagger-as-add-select {
+  flex: 1;
+  background: #1a1a1a;
+  border: 1px dashed #5a5a5a;
+  color: #bbb;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+.power-tagger-as-add-select:hover {
+  border-color: #888;
+  color: #fff;
+}
+
+/* TagSelect / StudioSelect / PerformerSelect inside a row \u2014
+ * they need to be flex-1 so they fill remaining space. */
+.power-tagger-as-row .react-select,
+.power-tagger-as-row > div:not(.power-tagger-as-row-label):not(.power-tagger-as-row-values) {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Each row in the panel body. Slightly inset card so multiple rules read
+ * as a list rather than blending together. */
+.power-tagger-rules-pr-row {
+  background: #1f1f1f;
+  border: 1px solid #2c2c2c;
+  border-radius: 5px;
+  margin-bottom: 8px;
+  overflow: hidden;
+}
+
+.power-tagger-rules-pr-row:last-child {
+  margin-bottom: 0;
+}
+
+.power-tagger-rules-pr-row-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 12px;
+}
+
+.power-tagger-rules-pr-row-header:hover {
+  background: #2a2a2a;
+}
+
+.power-tagger-rules-pr-row-name {
+  font-weight: 600;
+  color: #f0f0f0;
+  flex-shrink: 0;
+}
+
+.power-tagger-rules-pr-row-summary {
+  color: #888;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.power-tagger-rules-pr-row-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.power-tagger-rules-pr-row-actions .btn {
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.power-tagger-rules-pr-row-body {
+  padding: 10px 12px 12px;
+  border-top: 1px solid #2c2c2c;
+  background: #181818;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.power-tagger-rules-pr-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.power-tagger-rules-pr-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+.power-tagger-rules-pr-name-input {
+  width: 100%;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.power-tagger-rules-pr-scope-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.power-tagger-rules-pr-mode-select,
+.power-tagger-rules-pr-cat-select,
+.power-tagger-rules-pr-sub-select {
+  padding: 3px 6px;
+  font-size: 12px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.power-tagger-rules-pr-cat-select,
+.power-tagger-rules-pr-sub-select {
+  min-width: 160px;
+}
+
+.power-tagger-rules-pr-mode-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.power-tagger-rules-pr-mode-label {
+  font-size: 11px;
+  color: #aaa;
+}
+
+.power-tagger-rules-pr-gender-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.power-tagger-rules-pr-gender-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.power-tagger-rules-pr-gender-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ddd;
+  cursor: pointer;
+  min-width: 175px;
+}
+
+.power-tagger-rules-pr-gender-toggle input[type="checkbox"] {
+  margin: 0;
+}
+
+.power-tagger-rules-pr-num-input {
+  width: 60px;
+  padding: 3px 6px;
+  font-size: 12px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.power-tagger-rules-pr-range-sep {
+  color: #777;
+  font-size: 12px;
+}
+
+.power-tagger-rules-pr-limit-row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.power-tagger-rules-pr-limit-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+.power-tagger-rules-pr-condition-hint {
+  font-size: 11px;
+  color: #777;
+  font-style: italic;
+}
+
+/* Performer Rules — group editor (v0.11.0 rev). Each group is a card. */
+.power-tagger-rules-pr-group {
+  background: #161616;
+  border: 1px solid #2c2c2c;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.power-tagger-rules-pr-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.power-tagger-rules-pr-group-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+  padding: 4px 8px;
+  background: #111;
+  border: 1px solid #2c2c2c;
+  color: #f0f0f0;
+  border-radius: 4px;
+}
+
+.power-tagger-rules-pr-group-tags {
+  /* Let the TagSelect dropdown find room; no overflow hidden. */
+  position: relative;
+}
+
+.power-tagger-rules-pr-group-cap {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+/* Conditional editor — performer-triggers sub-section. Tucked between
+ * the head row and Targets, visually grouped with a left border. */
+.power-tagger-cond-perf {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #161616;
+  border-left: 2px solid #3a5a8a;
+  border-radius: 3px;
+}
+
+.power-tagger-cond-perf-toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #ddd;
+  cursor: pointer;
+  user-select: none;
+}
+
+.power-tagger-cond-perf-toggle input[type="checkbox"] {
+  margin: 0;
+}
+
+.power-tagger-cond-perf-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---------- Save-confirm modal (v0.11.2) ----------------------------- */
+
+/*
+ * Rendered via ReactDOM.createPortal to document.body, so it sits above
+ * the walkthrough modal regardless of overflow clipping. Matches the
+ * visual language of the warning banners (red accents, dark background)
+ * to make the connection obvious — "this is the same warnings, just
+ * pulled together for review before save".
+ */
+.power-tagger-save-confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 100050;  /* above the walkthrough modal */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+/* v0.14.0: the Add / Rename / Remove configuration modal. It reuses
+ * the save-confirm chrome but overrides the z-index DOWN to 1400.
+ * Stash's TagSelect hard-pins its dropdown menu portal at z-index
+ * 1600, ignoring any styles.menuPortal value we pass. A modal that
+ * contains a TagSelect must therefore sit BELOW 1600, or the picker
+ * opens behind it. 1400 still clears the rules editor modal (its
+ * overlay is z 1050). This is why it does NOT use the 100050 the
+ * other save-confirm modals use. */
+.power-tagger-config-editor-overlay {
+  z-index: 1400;
+}
+
+.power-tagger-save-confirm-modal {
+  background: #1a1a1a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  max-width: 720px;
+  width: 100%;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.6);
+}
+
+.power-tagger-save-confirm-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 16px 20px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #221414;
+}
+
+/* v0.14.0: neutral header for the (non-destructive) Add / Edit
+ * configuration modals. The red save-confirm header is kept only for
+ * Remove, which actually deletes something. */
+.power-tagger-config-editor-header {
+  background: #202020;
+}
+.power-tagger-config-editor-header .power-tagger-save-confirm-title {
+  color: #ececec;
+}
+
+.power-tagger-save-confirm-icon {
+  font-size: 24px;
+  color: #ff4d4d;
+  line-height: 1;
+  margin-top: 2px;
+}
+
+.power-tagger-save-confirm-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #ffb3b3;
+}
+
+.power-tagger-save-confirm-sub {
+  font-size: 12px;
+  color: #999;
+  margin-top: 2px;
+}
+
+.power-tagger-save-confirm-list {
+  padding: 12px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.power-tagger-save-confirm-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  background: #221111;
+  border-left: 3px solid #c44;
+  border-radius: 3px;
+  color: #ddd;
+  font-size: 13px;
+  line-height: 1.45;
+  transition: opacity 220ms ease, background 220ms ease;
+}
+
+/* Soft variant \u2014 yellow left border to mirror inline soft banner. */
+.power-tagger-save-confirm-item-soft {
+  background: #221d11;
+  border-left-color: #c89436;
+}
+
+/* Hard variant \u2014 red left border (default colour already covers this
+ * but keep the explicit class for symmetry / future tweaks). */
+.power-tagger-save-confirm-item-hard {
+  border-left-color: #c44;
+}
+
+/* v0.11.4: Config-mismatch variant. Violet-blue accent to match
+ * the inline config banner (renderConfigDriftWarning). Same shape
+ * as soft, just a different colour family so users can scan at a
+ * glance which warnings are "config mismatch" vs "tag issue". */
+.power-tagger-save-confirm-item-config {
+  background: #161a26;
+  border-left-color: #8a8aff;
+}
+.power-tagger-save-confirm-item-config .power-tagger-save-confirm-head {
+  color: #c8d0ff;
+}
+
+/* Resolved \u2014 the row's offending tags have been unstaged. Visually
+ * dim + strikethrough so the user can see what they fixed without
+ * the row disappearing. Border colour shifts to green to signal
+ * "resolved" state. Transition opacity for a gentle dim animation. */
+.power-tagger-save-confirm-item-resolved {
+  opacity: 0.55;
+  background: #122014;
+  border-left-color: #4a8a4a !important;
+}
+
+.power-tagger-save-confirm-item-resolved .power-tagger-save-confirm-text {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.5);
+}
+
+.power-tagger-save-confirm-text {
+  flex: 1;
+  min-width: 0;
+  word-wrap: break-word;
+}
+
+.power-tagger-save-confirm-head {
+  font-weight: 600;
+  color: #fff;
+}
+
+/* Hard items get a slightly different headline tint to match the
+ * inline hard banner (where strong text is light red). */
+.power-tagger-save-confirm-item-hard .power-tagger-save-confirm-head {
+  color: #ffb3b3;
+}
+
+/* Per-row Resolve / Undo button. Compact, right-aligned. The Undo
+ * variant uses btn-success colour to signal "this is the resolved
+ * state". */
+.power-tagger-save-confirm-resolve {
+  flex-shrink: 0;
+  align-self: center;
+  white-space: nowrap;
+  min-width: 78px;
+}
+
+.power-tagger-save-confirm-resolve-undo {
+  /* Tweak success button slightly for in-modal contrast. */
+  background: #28a745;
+  border-color: #28a745;
+  color: #fff;
+}
+
+.power-tagger-save-confirm-item:last-child {
+  margin-bottom: 0;
+}
+
+.power-tagger-save-confirm-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid #2a2a2a;
+  background: #181818;
+}
+
+/* ---------- Offending tag chips (v0.11.2) -------------------------- */
+
+/*
+ * Used in inline warning banners + the save-confirm modal. Each chip
+ * is a small clickable button: background = tag's category colour,
+ * text = pickTextColour contrast. Clicking removes that specific tag
+ * from the staged set. Replaces the old plain-text offending lists +
+ * bulk "Remove offending tags" button for per-tag granularity.
+ *
+ * Background colour is set inline via React style prop (because it
+ * depends on the tag's category), so this stylesheet only handles
+ * shape, spacing, hover/active states, and the trailing × glyph.
+ */
+.power-tagger-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  margin: 1px 0;
+  border: none;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.4;
+  cursor: pointer;
+  transition: opacity 120ms ease, transform 80ms ease, box-shadow 120ms ease;
+  vertical-align: baseline;
+  max-width: 100%;
+}
+
+.power-tagger-tag-chip:hover {
+  opacity: 0.85;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.15);
+}
+
+.power-tagger-tag-chip:active {
+  transform: scale(0.97);
+}
+
+.power-tagger-tag-chip:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.4);
+}
+
+/* Trailing × — subtle, indicates "click to remove". Spacing is via
+ * gap on the parent flex container. */
+.power-tagger-tag-chip-x {
+  font-size: 13px;
+  font-weight: 700;
+  opacity: 0.65;
+  line-height: 1;
+  margin-left: 1px;
+}
+
+.power-tagger-tag-chip:hover .power-tagger-tag-chip-x {
+  opacity: 1;
+}
+
+/* Separator span between chips — visual fallback only (the flex layout
+ * of the parent handles wrap-after-each-chip naturally). Kept minimal
+ * so chips can read as a comma-spaced list. */
+.power-tagger-tag-chip-sep {
+  display: inline-block;
+  width: 2px;
+}
+
+/* When chips appear in a resolved modal row, dim them so they read as
+ * "no longer relevant". They're still clickable (to re-stage) but
+ * visually de-emphasised. */
+.power-tagger-save-confirm-item-resolved .power-tagger-tag-chip {
+  opacity: 0.5;
+}
+
+/* v0.11.4: Static (non-interactive) chip variant. Used in the
+ * config-drift banner where chips reference rule expectations,
+ * not staged tags the user can remove. No hover/active/focus
+ * effects, default cursor, no \u00D7 glyph (the JS doesn't emit
+ * one for the static variant, this is belt-and-braces). */
+.power-tagger-tag-chip-static {
+  cursor: default;
+  transition: none;
+}
+.power-tagger-tag-chip-static:hover,
+.power-tagger-tag-chip-static:focus,
+.power-tagger-tag-chip-static:active {
+  opacity: 1;
+  box-shadow: none;
+  transform: none;
+}
+.power-tagger-tag-chip-static .power-tagger-tag-chip-x {
+  display: none;
+}
+
+/* ---------- Resolved-state chips + all-resolved header (v0.11.2) ----- */
+
+/*
+ * Chip in modal "unstaged" state — visible but visually struck through.
+ * Click re-stages. Uses text-decoration + opacity for the struck look
+ * without losing the cat colour. The × glyph is replaced by ↺ at the
+ * JS level to signal "click to undo" instead of "click to remove".
+ */
+.power-tagger-tag-chip-struck {
+  text-decoration: line-through;
+  text-decoration-color: rgba(255, 255, 255, 0.85);
+  text-decoration-thickness: 2px;
+  opacity: 0.55;
+}
+
+.power-tagger-tag-chip-struck:hover {
+  opacity: 0.85;
+}
+
+/* Bolded "(over by N)" suffix — inline + modal. Makes the actionable
+ * count stand out from the rest of the body. Force white because the
+ * inline hard banner styles all `strong` inside it red (#ff8b8b) — we
+ * want only the headline to inherit that, not this body suffix. */
+.power-tagger-warn-overby,
+.power-tagger-save-confirm-overby {
+  font-weight: 700;
+}
+
+.power-tagger-warn-banner-hard .power-tagger-warn-line strong.power-tagger-warn-overby {
+  color: #fff;
+  font-weight: 700;
+}
+
+/* All-resolved state — header header background + icon flip green.
+ * Modal chrome stays the same; only the header visually changes so
+ * the user gets clear feedback "you're good to save". Save button is
+ * styled separately via btn-success in the React code. */
+.power-tagger-save-confirm-modal-resolved .power-tagger-save-confirm-header {
+  background: #143018;
+  border-bottom-color: #1f5a26;
+}
+
+.power-tagger-save-confirm-modal-resolved .power-tagger-save-confirm-icon {
+  color: #4ade4a;
+  font-size: 28px;
+}
+
+.power-tagger-save-confirm-modal-resolved .power-tagger-save-confirm-title {
+  color: #b6e6b6;
+}
+
+/* ---------- Rules editor section grouping (v0.11.2) -------------- */
+
+/*
+ * The rules editor's right pane is one scrollable column with three
+ * meta-rule sections (Cascades, Conditionals, Constraint Rules)
+ * followed by the per-tag-category tree. Without grouping they all
+ * stack as visual peers, which obscures that the rule sections
+ * describe HOW the categories below behave.
+ *
+ * Each .power-tagger-rules-section wraps a labeled group. The label
+ * sits above the body; the body holds the actual panels. Spacing
+ * between sections makes the two groups read as distinct.
+ */
+.power-tagger-rules-section {
+  margin-bottom: 24px;
+}
+
+.power-tagger-rules-section:last-child {
+  margin-bottom: 0;
+}
+
+.power-tagger-rules-section-label {
+  color: #888;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0 4px 6px;
+  border-bottom: 1px solid #2a2a2a;
+  margin-bottom: 10px;
+}
+
+.power-tagger-rules-section-body {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Reset margin-bottom on the last item inside a section so the
+ * section's own margin handles the gap. */
+.power-tagger-rules-section-body > *:last-child {
+  margin-bottom: 0;
+}
+
+/* ---------- Edit Tag Categories button (v0.11.2) ----------------- */
+
+/*
+ * Sits at the bottom of the left rail in the Rules editor. Visually
+ * separated from the config list above so it reads as a different
+ * kind of action (not another config row).
+ *
+ * margin-top: auto pushes it to the bottom of the flex column when
+ * the rail has spare vertical space; otherwise it sits directly
+ * under the last config row.
+ */
+.power-tagger-rules-rail-tc-btn {
+  margin: auto 8px 8px;
+  display: block;
+  text-align: center;
+  font-size: 12px;
+}
+
+/* v0.11.5: bottom-of-rail action group. Pushes the three utility
+   buttons (Edit Tag Categories, Export Config, Import Config) to
+   the bottom of the rail as a tight stack. */
+.power-tagger-rules-rail-actions {
+  margin: auto 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.power-tagger-rules-rail-actions .btn {
+  display: block;
+  text-align: center;
+  font-size: 12px;
+  width: 100%;
+}
+
+/* ---------- Below-player layout (v0.11.3) -------------------------- */
+
+/*
+ * Sits under the player in the left column. Two sub-columns:
+ *   - Left:  scene info card  (title + metadata)  ~30% of the row
+ *   - Right: performer cards  (single row + horizontal scroll) ~70%
+ * Performers get the larger share so the cards are usable-sized
+ * with name + colour visible. The performer popout still positions
+ * absolutely over the player area (anchored to .power-tagger-left's
+ * relative box).
+ */
+.power-tagger-below-player {
+  flex: 0 0 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(220px, 30%) 1fr;
+  gap: 0;
+  background: #161616;
+  border-top: 1px solid #2c2c2c;
+  overflow: visible;
+}
+
+/* ---------- Scene info card --------------------------------------- */
+
+.power-tagger-scene-info {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  border-right: 1px solid #2c2c2c;
+  background: #1a1a1a;
+  overflow: hidden;
+}
+
+.power-tagger-scene-info-title {
+  /* Mirrors Stash's scene-view title style: large, bold, white.
+   * Clamped to 2 lines so very long titles wrap to a second line
+   * then truncate with an ellipsis. */
+  font-size: 18px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1.25;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  word-break: break-word;
+}
+
+.power-tagger-scene-info-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #aaa;
+  line-height: 1.4;
+}
+
+.power-tagger-scene-info-sep {
+  color: #555;
+  user-select: none;
+}
+
+/* File path \u2014 dimmer, monospaced, wraps within the column. Sits
+ * below the meta row as a tertiary line for the user to copy/inspect
+ * when they need it. */
+.power-tagger-scene-info-path {
+  margin-top: 4px;
+  font-family: monospace, ui-monospace, SFMono-Regular, Menlo;
+  font-size: 11px;
+  color: #666;
+  word-break: break-all;
+  line-height: 1.4;
+  /* Clamp to a few lines so super-deep paths don't blow up the box.
+   * Hover tooltip on the element shows the full path. */
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Scene-info card header (v0.12.0) --------------------- */
+
+/* Header row added above the title — uppercase label on the left,
+ * Edit button on the right. Mirrors .power-tagger-performer-row-header. */
+.power-tagger-scene-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.power-tagger-scene-info-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+/* ---------- Scene-metadata editor (v0.12.0) ---------------------- */
+
+/* While the editor is open the below-player grid collapses to a
+ * single column so the panel spans the full width (covering both the
+ * scene-info card and the performer row). */
+.power-tagger-below-player-editing {
+  grid-template-columns: 1fr;
+}
+
+/* Full-width editor panel. Header + scrollable body + footer. The
+ * body is height-capped with its own scroll so a long details field
+ * or a big URL list can't blow up the below-player band. */
+.power-tagger-meta-editor {
+  display: flex;
+  flex-direction: column;
+  background: #161616;
+  min-width: 0;
+}
+
+.power-tagger-meta-editor-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid #2c2c2c;
+}
+
+.power-tagger-meta-editor-title {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #ccc;
+}
+
+/* Close button uses Bootstrap's .btn .btn-sm .btn-secondary — no
+ * custom visual rules needed, the marker class is kept for clarity. */
+
+.power-tagger-meta-editor-body {
+  padding: 12px 14px;
+  max-height: 230px;
+  overflow-y: auto;
+  /* Belt-and-braces: never produce a horizontal scrollbar. */
+  overflow-x: hidden;
+}
+
+/* Two-column label+field grid. Wide fields span both columns. */
+.power-tagger-meta-editor-form {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+.power-tagger-meta-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.power-tagger-meta-field-wide {
+  grid-column: 1 / -1;
+}
+
+.power-tagger-meta-field-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+}
+
+/* .power-tagger-as-text carries flex:1 for row layouts elsewhere;
+ * inside a vertical field that collapses its height — reset it. */
+.power-tagger-meta-field .power-tagger-as-text,
+.power-tagger-meta-field .power-tagger-as-num {
+  flex: 0 0 auto;
+  width: 100%;
+}
+.power-tagger-meta-field .power-tagger-as-num {
+  max-width: 120px;
+}
+.power-tagger-meta-field .power-tagger-as-desc {
+  width: 100%;
+}
+
+/* URL list — one text input + remove button per row, Add at the end. */
+.power-tagger-meta-url-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.power-tagger-meta-url-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+/* The URL input must grow/shrink WITHIN the row (input + × button),
+ * not take 100% width — otherwise the × button is pushed past the
+ * right edge and the whole panel gets a horizontal scrollbar. This
+ * 3-class selector beats the generic `.power-tagger-meta-field
+ * .power-tagger-as-text { width:100% }` rule above. */
+.power-tagger-meta-url-row .power-tagger-as-text {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+}
+
+.power-tagger-meta-url-remove {
+  flex: 0 0 auto;
+  line-height: 1;
+}
+
+.power-tagger-meta-url-add {
+  align-self: flex-start;
+}
+
+.power-tagger-meta-editor-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  padding: 8px 14px;
+  border-top: 1px solid #2c2c2c;
+}
+
+.power-tagger-meta-editor-error {
+  flex: 1;
+  min-width: 0;
+  color: #f88;
+  font-size: 12px;
+}
+
+/* ---------- Performer row (right sub-column) --------------------- */
+
+.power-tagger-performer-row-wrap {
+  position: relative;
+  padding: 6px 12px 8px;
+  min-height: 0;
+  /* v0.11.12: min-width: 0 so the wrap can shrink below the
+     intrinsic content width of the performer-row child. Without
+     this the flex column's default min-width:auto bubbles content
+     width up to .power-tagger-left. */
+  min-width: 0;
+  overflow: visible;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: #161616;
+}
+
+/* Header row \u2014 label on the left, Edit button on the right. */
+.power-tagger-performer-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.power-tagger-performer-row-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #888;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.power-tagger-performer-row-count {
+  color: #aaa;
+  font-weight: 600;
+  font-size: 11px;
+}
+
+/* v0.11.12: shell wrapping the performer row + conditional left/right
+ * scroll arrows. The shell is `position: relative` so the arrows can
+ * absolutely-position over the row's edges; this means the row's
+ * scroll-area isn't shortened by the arrows (they overlap the first/
+ * last visible cards slightly, with a subtle gradient behind them
+ * via box-shadow so a card edge isn't obviously clipped). */
+.power-tagger-performer-row-shell {
+  position: relative;
+  min-width: 0;
+}
+
+.power-tagger-performer-row-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(22, 22, 22, 0.92);
+  border: 1px solid #333;
+  border-radius: 999px;
+  width: 24px;
+  height: 24px;
+  color: #ddd;
+  cursor: pointer;
+  padding: 0;
+  /* Soft outer shadow blends the arrow into the row edge so it doesn't
+     look like a hard-edged overlay clipping a card. */
+  box-shadow: 0 0 12px 6px rgba(22, 22, 22, 0.6);
+  transition: background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+
+.power-tagger-performer-row-arrow-left {
+  left: 2px;
+}
+
+.power-tagger-performer-row-arrow-right {
+  right: 2px;
+}
+
+.power-tagger-performer-row-arrow:hover {
+  background: rgba(36, 36, 36, 0.96);
+  border-color: #555;
+  color: #fff;
+}
+
+.power-tagger-performer-row-arrow:active {
+  background: rgba(12, 12, 12, 0.96);
+  border-color: #777;
+  color: #fff;
+}
+
+/* Single-row horizontally scrollable strip of performer cards.
+ * Horizontal scrollbar appears automatically when there are more
+ * cards than fit. flex-shrink: 0 on cards stops them collapsing.
+ *
+ * align-items: flex-start \u2014 cards size to their own content
+ * (image + name), they DON'T stretch to fill the row height.
+ * Previously had `stretch` which forced cards taller than their
+ * intrinsic content and clipped the name banner out of view via
+ * `overflow: hidden`. */
+.power-tagger-performer-row {
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: 0;
+  padding-bottom: 4px;
+}
+
+/* Portrait performer card \u2014 photo on top (2:3), name banner below
+ * in gender colour. Restored to ~120px wide for clear name + photo
+ * visibility (was reduced when performers were 50% of the row). */
+.power-tagger-performer-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 120px;
+  flex-shrink: 0;
+  background: #1f1f1f;
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+  border: 1px solid transparent;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35);
+  transition: transform 0.1s ease, box-shadow 0.1s ease, border-color 0.1s ease;
+}
+
+.power-tagger-performer-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.power-tagger-performer-card:active {
+  transform: translateY(0);
+}
+
+.power-tagger-performer-card-img {
+  aspect-ratio: 2 / 3;
+  width: 100%;
+  background-color: #0e0e0e;
+  background-size: cover;
+  background-position: center top;
+  background-repeat: no-repeat;
+  flex-shrink: 0;
+}
+
+/* Open-in-new-tab link icon in the top-right corner of each card. */
+.power-tagger-performer-card-link {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  font-size: 13px;
+  line-height: 1;
+  text-decoration: none;
+  opacity: 0.85;
+  transition: opacity 80ms ease, background 80ms ease;
+  z-index: 2;
+}
+
+.power-tagger-performer-card-link:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.8);
+  color: #fff;
+  text-decoration: none;
+}
+
+/* Name banner. The banner has a minimum height so single-line
+ * names still look like a substantial label (not a thin strip);
+ * banners with longer names wrap and grow naturally. */
+.power-tagger-performer-card-name {
+  min-height: 36px;
+  display: flex;
+  /* v0.11.13: stack the name + age vertically and center them as one
+     unit inside the banner. Keeps the banner a single coloured block
+     instead of growing a separate rail below. */
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-word;
+  background: #2a2a2a;
+  color: #ddd;
+}
+
+.power-tagger-performer-card-name-text {
+  /* v0.11.13: explicit wrapper around the name so its size/weight
+     stay independent of the smaller age line. */
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* v0.11.13: age caption nested inside the gender-coloured banner.
+ * Small, light weight, and slightly translucent so the gender colour
+ * still shows through — reads as a quiet caption, not a competing
+ * second label. */
+.power-tagger-performer-card-age {
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0.02em;
+  opacity: 0.75;
+}
+
+/* Male \u2014 brighter blue banner. */
+.power-tagger-performer-card-male .power-tagger-performer-card-name {
+  background: #2d5d8a;
+  color: #ffffff;
+}
+
+/* Female \u2014 bright pink banner. */
+.power-tagger-performer-card-female .power-tagger-performer-card-name {
+  background: #c63a78;
+  color: #ffffff;
+}
+
+/* v0.11.12: Other (non-binary, intersex, transgender male/female) \u2014
+ * muted purple banner. Sits tonally between the blue (#2d5d8a) and
+ * pink (#c63a78) so the three colours read as a related family. White
+ * text picked for the same reason as the others (contrast with the
+ * banner background). Performers with no gender set get no class
+ * here and fall through to the default grey banner, distinguishing
+ * "unset" from "explicitly other". */
+.power-tagger-performer-card-other .power-tagger-performer-card-name {
+  background: #8a3ec6;
+  color: #ffffff;
+}
+
+/* Active state \u2014 highlight when this performer's popout is open. */
+.power-tagger-performer-card-active {
+  outline: 2px solid rgba(255, 255, 255, 0.65);
+  outline-offset: 2px;
+}
+
+.power-tagger-performer-edit {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+
+/* Editor (PerformerSelect) appears as an overlay above the cards
+ * when toggled open. Absolutely positioned so it doesn't push the
+ * bottom row out of place. The header Edit button toggles it. */
+.power-tagger-performer-editor {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 8px;
+  background: #1c1c1c;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 8px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.6);
+  z-index: 50;
+}
+
+/* Popout — absolutely positioned over the player area. Covering a
+ * bit of the video is fine; the user opened it deliberately.
+ *
+ * v0.11.13: lifted visual treatment — subtle vertical gradient on
+ * the surface (#1f1f1f → #161616), softer-but-clearer border, deeper
+ * floating shadow. A 3px gender-coloured left stripe gives the card
+ * personality and ties it back to the performer-card banner colour
+ * it came from. Defaults to a neutral grey stripe when gender is
+ * null / not in any known bucket. */
+.power-tagger-performer-popout {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  /* v0.11.13: card sizes to its content (longest detail row + photo
+     column + padding + gaps) up to a 480px ceiling. Long values
+     ellipsis-truncate at that point. Lets a sparse performer with
+     only a couple of detail rows render as a tight card, not a
+     half-empty wide panel. */
+  max-width: min(480px, calc(100% - 20px));
+  width: fit-content;
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px 14px 16px;
+  background: linear-gradient(to bottom, #1f1f1f, #161616);
+  border: 1px solid #3d3d3d;
+  border-left: 3px solid #555;
+  border-radius: 6px;
+  box-shadow:
+    0 20px 50px rgba(0, 0, 0, 0.85),
+    0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+  z-index: 60;
+}
+
+/* Gender-tinted left stripes. Same palette as the performer-card
+   banner colours so the popout visually echoes the card it came from. */
+.power-tagger-performer-popout-male {
+  border-left-color: #2d5d8a;
+}
+
+.power-tagger-performer-popout-female {
+  border-left-color: #c63a78;
+}
+
+.power-tagger-performer-popout-other {
+  border-left-color: #8a3ec6;
+}
+
+.power-tagger-performer-popout-close {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #aaa;
+  font-size: 20px;
+  line-height: 20px;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.power-tagger-performer-popout-close:hover {
+  background: #2a2a2a;
+  color: #fff;
+}
+
+.power-tagger-performer-popout-img {
+  width: 120px;
+  height: 160px;
+  flex-shrink: 0;
+  background-size: cover;
+  background-position: center top;
+  background-color: #2a2a2a;
+  border-radius: 4px;
+  /* v0.11.13: faint inner highlight so the photo lifts off the card
+     surface, matching how Stash itself frames profile photos. */
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06) inset;
+}
+
+.power-tagger-performer-popout-img-empty {
+  background-image: none;
+}
+
+.power-tagger-performer-popout-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.power-tagger-performer-popout-name {
+  /* v0.11.13: flex-row so the gender icon sits next to the name on
+     the same line. align-items: center vertically aligns the icon
+     with the name's cap-height. The name text is in its own span
+     (flex: 0 1 auto) so a long name doesn't crush the icon. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #fff;
+  padding-right: 24px;  /* room for the close button */
+  /* v0.11.13: hairline divider gives the name a header feel. */
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid #2d2d2d;
+  letter-spacing: 0.01em;
+}
+
+.power-tagger-performer-popout-name-text {
+  /* Allow ellipsis on extremely long names while leaving room for
+     the icon. min-width: 0 lets flex actually shrink the text. */
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+/* v0.11.13: gender icon colour is driven by the gender-suffixed
+   popout class (same palette as the left stripe). currentColor on
+   the svg fill picks up the colour set below. flex-shrink: 0 stops
+   the icon getting squished by a long name. */
+.power-tagger-performer-popout-gender-icon {
+  flex-shrink: 0;
+  color: #888;  /* fallback for unknown / unset gender (icon won't actually render in that case, but harmless) */
+}
+
+.power-tagger-performer-popout-male .power-tagger-performer-popout-gender-icon {
+  color: #5d8bb8;
+}
+
+.power-tagger-performer-popout-female .power-tagger-performer-popout-gender-icon {
+  color: #d97aa0;
+}
+
+.power-tagger-performer-popout-other .power-tagger-performer-popout-gender-icon {
+  color: #a55ad6;
+}
+
+.power-tagger-performer-popout-details {
+  display: flex;
+  flex-direction: column;
+  /* v0.11.13: rows breathe more. */
+  gap: 5px;
+  margin-top: 2px;
+}
+
+.power-tagger-performer-popout-row {
+  display: flex;
+  /* v0.11.13: slightly bigger base font for readability. */
+  font-size: 13px;
+  line-height: 1.4;
+  gap: 8px;
+}
+
+.power-tagger-performer-popout-label {
+  flex-shrink: 0;
+  width: 100px;
+  /* v0.11.13: muted but readable, slightly cooler than #888. */
+  color: #8d8d8d;
+  font-weight: 500;
+}
+
+.power-tagger-performer-popout-value {
+  /* v0.11.13: slightly brighter so values pop against the muted labels. */
+  color: #eaeaea;
+  /* v0.11.13: single-line truncation. With width: fit-content on the
+     card, values longer than what fits at the 480px ceiling ellipsis
+     out rather than wrapping the row to 2+ lines. min-width: 0 lets
+     the flex item shrink below intrinsic content size so the ellipsis
+     can engage. */
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ============================================================================
+ * Queue sidebar (v0.11.10) — visible ONLY in queue mode (length > 1, from
+ * the scenes-list toolbar). Single-scene flows never render this at all.
+ *
+ * Layout: a thin always-visible rail sits at the modal's left edge with an
+ * expand-collapse arrow. When the user clicks it, a fuller sidebar appears
+ * to the right of the rail (still inside the .power-tagger-queue-shell
+ * flex row). The whole shell is sibling of .power-tagger-modal; the parent
+ * .power-tagger-overlay continues to centre everything horizontally.
+ *
+ * Width strategy: the shell never sets a width itself — the modal keeps
+ * its 85vw and the sidebar grows on top, naturally re-centring via the
+ * overlay's flex centring. On narrow viewports where 85vw + sidebar
+ * doesn't fit, the .power-tagger-queue-shell's max-width caps the total
+ * and the modal absorbs the overflow (browser flex behaviour).
+ * ============================================================================ */
+
+.power-tagger-queue-shell {
+  display: flex;
+  align-items: stretch;
+  /* Cap total shell width so it never exceeds the viewport even when the
+     sidebar is open and the modal is 85vw. Modal is flex: 0 1 auto, so
+     it absorbs the deficit on narrow viewports. */
+  max-width: calc(100vw - 32px);
+  max-height: 85vh;
+}
+
+.power-tagger-queue-rail {
+  flex: 0 0 22px;
+  background: #141414;
+  border: 1px solid #2c2c2c;
+  border-right: none;
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #888;
+  transition: background-color 0.12s ease, color 0.12s ease;
+  user-select: none;
+}
+
+.power-tagger-queue-rail:hover {
+  background: #1c1c1c;
+  color: #ddd;
+}
+
+.power-tagger-queue-rail-arrow {
+  display: block;
+  /* Vertical pip-like indicator. The chevron itself sits centred in the
+     rail; multiple stacked dots above and below would feel busy. One
+     chevron is plenty for affordance. */
+}
+
+.power-tagger-queue-sidebar {
+  flex: 0 0 280px;
+  background: #161616;
+  border: 1px solid #2c2c2c;
+  border-right: none;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* The sidebar shares its top-radius with the rail. Bottom matches too. */
+  border-radius: 0;
+}
+
+/* When the shell contains a sidebar (sibling of rail), the modal loses
+   its left radius (sidebar + modal visually fused into one larger box).
+   When the shell has only the rail, the rail's right edge abuts the
+   modal directly — modal still loses its left radius so the rail's
+   right edge meets the modal's flat left edge cleanly. So either way,
+   when there's a shell, the modal's left side is flat. */
+.power-tagger-queue-shell .power-tagger-modal {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  /* Drop the modal's left border so it doesn't double up with the rail's
+     right edge (rail has no border-right, but the modal would). */
+  border-left: none;
+}
+
+.power-tagger-queue-sidebar-header {
+  padding: 10px 12px;
+  border-bottom: 1px solid #2c2c2c;
+  color: #ddd;
+  font-size: 13px;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.power-tagger-queue-sidebar-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.power-tagger-queue-item {
+  display: flex;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  background: #1c1c1c;
+  border: 1px solid transparent;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.power-tagger-queue-item:hover {
+  background: #232323;
+  border-color: #383838;
+}
+
+.power-tagger-queue-item--current {
+  border-color: #d4a437;
+  background: #2a2418;
+}
+
+.power-tagger-queue-item--current:hover {
+  background: #2e2820;
+  border-color: #d4a437;
+}
+
+.power-tagger-queue-item--done {
+  opacity: 0.55;
+}
+
+.power-tagger-queue-item--done:hover {
+  opacity: 0.85;
+}
+
+.power-tagger-queue-item-index {
+  flex: 0 0 auto;
+  color: #888;
+  font-size: 11px;
+  font-weight: 600;
+  width: 18px;
+  text-align: right;
+  padding-top: 2px;
+}
+
+.power-tagger-queue-item-thumb {
+  flex: 0 0 100px;
+  height: 56px;
+  background: #0a0a0a;
+  border-radius: 3px;
+  overflow: hidden;
+  position: relative;
+}
+
+.power-tagger-queue-item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.power-tagger-queue-item-thumb-tick {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 18px;
+  height: 18px;
+  background: #2f9d4a;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+}
+
+.power-tagger-queue-item-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #ccc;
+}
+
+.power-tagger-queue-item-title {
+  font-weight: 600;
+  color: #eee;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.power-tagger-queue-item-studio {
+  color: #d4a437;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.power-tagger-queue-item-performers,
+.power-tagger-queue-item-date {
+  color: #999;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

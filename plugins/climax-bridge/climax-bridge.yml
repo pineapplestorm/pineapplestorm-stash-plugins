@@ -1,0 +1,36 @@
+name: Climax Bridge
+description: Full-featured stats tracking for Stash - adding sessions, watch time, trends and records. Requires the Climax app or server.
+version: 1.0.0
+ui:
+  javascript:
+    - climax-bridge.js
+
+# Setting keys carry an s1..s5 prefix ON PURPOSE. Stash IGNORES the order they are
+# declared here and renders them sorted by KEY NAME (verified against a live Stash -
+# it returns them alphabetically, identically on every call, in an order that does not
+# match this file). The prefix is the only lever we have over the order the user sees,
+# so it encodes the intended reading order: master switch, then display, then the
+# connection pair, then the behaviour preference.
+# Renaming a key ORPHANS its stored value (Stash keys settings by name), so do not
+# renumber these casually once released - it silently resets everyone's config.
+settings:
+  s1Enabled:
+    displayName: Bridge enabled
+    description: When off, no heartbeats are sent. Defaults to on.
+    type: BOOLEAN
+  s2ShowIndicator:
+    displayName: Show tracking indicator in navbar
+    description: Adds a Climax pill to the top navigation bar showing whether a session is being tracked or organising; click it to start a session, stop, or enter organising mode (which pauses Stash play history). Defaults to on.
+    type: BOOLEAN
+  s3ClimaxUrl:
+    displayName: Climax URL
+    description: HTTP endpoint Climax listens on - the desktop app on this PC (http://localhost:9998, the default) or a Climax server on your network (e.g. http://192.168.1.20:9998). Leave it empty to use the default. The port has to match the one Climax serves on.
+    type: STRING
+  s4ClimaxToken:
+    displayName: Climax server token
+    description: Only needed if the Climax server requires a token (its CLIMAX_TOKEN). Leave empty for a desktop app or a token-free server.
+    type: STRING
+  s5OpenInDesktopApp:
+    displayName: Open Climax in the desktop app
+    description: Where the navbar pill sends you - both the Open Climax option and the wrap-up when you stop a session. Leave this off and Climax decides for you - a browser tab when it runs as a server, its own window when it's the desktop app. Turn it on to always use the desktop app. Worth turning on if you run a Climax server for your data but keep the desktop app open for reminders and idle detection. Defaults to off.
+    type: BOOLEAN

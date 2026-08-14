@@ -1,0 +1,29 @@
+name: Power Tagger
+# requires: tag-categories
+description: A structured, opinionated, rules-driven tagging environment. Your tags grouped by category beside the player, with optional rules to guide tagging. Tag one scene or a queue. Pairs with the Tag Categories plugin.
+version: 1.0.0
+ui:
+  requires:
+    - tag-categories
+  javascript:
+    - power-tagger.js
+  css:
+    - power-tagger.css
+
+# Setting keys are prefixed with a_, b_, c_ purely to force Stash's
+# alphabetical-by-key ordering to display them in the order we want.
+# The visible labels come from displayName below — keys are internal
+# identifiers only.
+settings:
+  a_rulesEditor:
+    displayName: Edit Power Tagger Rules
+    description: Open the rules editor for per-configuration settings.
+    type: STRING
+  b_askForSaveConfirm:
+    displayName: Confirm before saving
+    description: Show a "Save changes?" prompt when saving with no warnings.
+    type: BOOLEAN
+  c_organiseOnSaveDefault:
+    displayName: Mark organised on save
+    description: Default state of the per-scene "Organise on save" checkbox.
+    type: BOOLEAN
